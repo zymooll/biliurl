@@ -143,7 +143,3 @@ def getDownloadUrl(songID, bitRate):
     print("解析的下载链接为: ", downloadUrl)
     return downloadUrl
 
-
-
-login = LoginProtocol()
-login.SMSHandle(18090079913)
