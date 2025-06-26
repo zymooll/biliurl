@@ -1,7 +1,7 @@
 import requests
-import urllib
 import json
 import ffmpeg
+import time
 import os
 
 headers = {
@@ -15,32 +15,51 @@ headers = {
     'Origin': 'https://www.bilibili.com',
     'Referer': 'https://www.bilibili.com'
 }
+tempVideoFile='temp\\video.m4s'
+tempAudioFile='temp\\audio.m4s'
 
-bvid='BV1kK4y1Y7Zq'
-respCid=requests.get('https://api.bilibili.com/x/player/pagelist?bvid='+bvid,headers=headers)
-plist=respCid.json()
-cid=str(plist['data'][0]['cid'])
+#get the cid of video by bvid
+def getCid(bvid):
+    respCid=requests.get('https://api.bilibili.com/x/player/pagelist?bvid='+bvid,headers=headers)
+    plist=respCid.json()
+    cid=str(plist['data'][0]['cid'])
+    return cid
 
-respUrl=requests.get('https://api.bilibili.com/x/player/wbi/playurl?from_client=BROWSER&cid='+cid+'&qn=125&fourk=1&fnver=0&fnval=4048&bvid='+bvid,headers=headers)
-plist=respUrl.json()
-# -1:360p -2:480p -3:720p -4:1080p
-streamUrlVideo=str(plist['data']['dash']['video'][0]['baseUrl'])
-streamUrlAudio=str(plist['data']['dash']['audio'][0]['baseUrl'])
+#get video&audio stream by cid
+def getStream(bvid,cid,quality):
+    respUrl=requests.get('https://api.bilibili.com/x/player/wbi/playurl?from_client=BROWSER&cid='+cid+'&qn=125&fourk=1&fnver=0&fnval=4048&bvid='+bvid,headers=headers)
+    plist=respUrl.json()
+    streamUrlVideo=str(plist['data']['dash']['video'][0]['baseUrl'])
+    streamUrlAudio=str(plist['data']['dash']['audio'][0]['baseUrl'])
+    return [streamUrlVideo,streamUrlAudio]
 
-respVideo=requests.get(streamUrlVideo,headers=headers)
-with open(r'video.m4s','wb') as f:
-    f.write(respVideo.content)
+#download video&audio stream
+def downloadStream(streamUrl,videoFile=tempVideoFile,audioFile=tempAudioFile): # 0:video 1:audio
+    respVideo=requests.get(streamUrl[0],headers=headers)
+    with open(videoFile,'wb') as f:
+        f.write(respVideo.content)
+    respAudio=requests.get(streamUrl[1],headers=headers)
+    with open(audioFile,'wb') as f:
+        f.write(respAudio.content)
 
-respAudio=requests.get(streamUrlAudio,headers=headers)
-with open(r'audio.m4s','wb') as f:
-    f.write(respAudio.content)
+#integrate video&audio stream
+def integrateStream(outputFile,videoFile=tempVideoFile,audioFile=tempAudioFile):
+    command=f'ffmpeg -i '+videoFile+' -i '+audioFile+' -c:v copy -c:a copy '+outputFile
+    os.system(command)
 
+#remove temp downloaded file
+def removeTempFile():
+    os.remove(tempVideoFile)
+    os.remove(tempAudioFile)
 
-# 获取当前脚本的目录+相对路径调用
-current_dir = os.path.dirname(os.path.abspath(__file__))
-videoFile = os.path.join(current_dir, "video.m4s")
-audioFile = os.path.join(current_dir, "audio.m4s")
+infos=[['BV1HfK3zPEHE',-2]]
 
-outputFile='output.mp4'
-command=f"ffmpeg -i "+videoFile+" -i "+audioFile+" -c:v copy -c:a copy "+outputFile
-os.system(command)
+for info in infos:
+    bvid=info[0]
+    quality=str(info[1]) #-1:360p -2:480p -3:720p -4:1080p
+    print(bvid,quality)
+    cid=getCid(bvid)
+    streamUrl=getStream(bvid,cid,quality)
+    downloadStream(streamUrl)
+    integrateStream('output\\BillUrl-'+time.strftime('%Y-%m-%d-%H-%M-%S',time.localtime())+'.mp4')
+    removeTempFile()
