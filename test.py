@@ -1,5 +1,6 @@
-import requests
+import json
 
-url = "https://163.0061226.xyz/login/qr/key"
-resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
-print(resp.text)
+cookie_example = "{'code': 803, 'message': '授权登陆成功', 'cookie': '123123'}"
+cookie_example = cookie_example.replace("'", '"')  # 替换单引号为双引号（JSON 标准要求）
+cookie = json.loads(cookie_example)
+print(cookie)
