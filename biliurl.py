@@ -35,8 +35,12 @@ respAudio=requests.get(streamUrlAudio,headers=headers)
 with open(r'audio.m4s','wb') as f:
     f.write(respAudio.content)
 
-videoFile=r"C:\Coding\biliurl\video.m4s"
-audioFile=r"C:\Coding\biliurl\audio.m4s"
+
+# 获取当前脚本的目录+相对路径调用
+current_dir = os.path.dirname(os.path.abspath(__file__))
+videoFile = os.path.join(current_dir, "video.m4s")
+audioFile = os.path.join(current_dir, "audio.m4s")
+
 outputFile='output.mp4'
 command=f"ffmpeg -i "+videoFile+" -i "+audioFile+" -c:v copy -c:a copy "+outputFile
 os.system(command)
