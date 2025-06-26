@@ -69,10 +69,12 @@ class LoginProtocol:
         printQRcode(QRText)
 
     def checkQRStatus(self, key):
-        url = f"{baseUrl}login/qr/check?key={key}&timestamp={time.time()}&noCookie=true"
-
+        print("传入的key: ", key)
         while True:
-            resp = requests.get(url)
+            timestamp = int(time.time() * 1000)
+            url = f"{baseUrl}login/qr/check?key={key}&timestamp={timestamp}"
+
+            resp = self.session.get(url, headers=self.headers)
             data = resp.json()
             code = data.get("code")
 
@@ -80,7 +82,7 @@ class LoginProtocol:
                 print("❌ 二维码已过期")
                 return None
             elif code == 801:
-                print("⌛ 等待扫码中..." + str(key))
+                print("⌛ 等待扫码中...")
             elif code == 802:
                 print("📱 已扫码，请手机确认...")
             elif code == 803:
@@ -88,10 +90,9 @@ class LoginProtocol:
                 print("响应数据：", data)
                 return data.get("cookie")
             else:
-                print("⚠️ 未知状态码：", code)
-
+                print("⚠️ 未知状态码：", code, data)
             time.sleep(2)
-    
+
     def qrLogin(self):
         key = self.getQRKey()
         self.getQRCode(key)
@@ -143,3 +144,7 @@ def getDownloadUrl(songID, bitRate):
     print("解析的下载链接为: ", downloadUrl)
     return downloadUrl
 
+
+
+login = loginProtocol = LoginProtocol()
+login.qrLogin()
