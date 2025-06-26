@@ -7,8 +7,8 @@ from PIL import Image
 from pyzbar.pyzbar import decode
 import urllib.parse
 
-#baseUrl = "https://163.0061226.xyz/"
-baseUrl = "http://192.168.101.6:3000/"
+baseUrl = "https://163.0061226.xyz/"
+#baseUrl = "http://192.168.101.6:3000/"
 songID = 520459140
 bitRate = 320000
 
@@ -145,6 +145,47 @@ def getDownloadUrl(songID, bitRate):
     return downloadUrl
 
 
+def mainMenu():
+    login = LoginProtocol()
 
-login = loginProtocol = LoginProtocol()
-login.qrLogin()
+    while True:
+        print("\n==== 网易云音乐登录菜单 ====")
+        print("1. 短信验证码登录")
+        print("2. 手机密码登录")
+        print("3. 扫码二维码登录")
+        print("4. 解析歌曲直链")
+        print("0. 退出程序")
+        choice = input("请选择功能编号：").strip()
+
+        if choice == "1":
+            phone = input("请输入手机号：").strip()
+            login.SMSHandle(phone)
+        elif choice == "2":
+            phone = input("请输入手机号：").strip()
+            password = input("请输入密码：").strip()
+            login.PhonePasswordLogin(phone, password)
+        elif choice == "3":
+            login.qrLogin()
+        elif choice == "4":
+            song_id = input("请输入歌曲ID（默认520459140）：").strip()
+            if not song_id:
+                song_id = 520459140
+            else:
+                song_id = int(song_id)
+            bitrate = input("请输入音质码率（默认320000）：").strip()
+            if not bitrate:
+                bitrate = 320000
+            else:
+                bitrate = int(bitrate)
+            getDownloadUrl(song_id, bitrate)
+        elif choice == "0":
+            print("👋 再见！")
+            break
+        else:
+            print("⚠️ 无效选项，请重试。")
+
+
+
+if __name__ == '__main__':
+    mainMenu()
+    
