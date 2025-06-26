@@ -6,11 +6,47 @@ from io import BytesIO
 from PIL import Image
 from pyzbar.pyzbar import decode
 import urllib.parse
+import os
+import json
+
+
 
 baseUrl = "https://163.0061226.xyz/"
 #baseUrl = "http://192.168.101.6:3000/"
 songID = 520459140
 bitRate = 320000
+COOKIE_FILE = "cookie.json"
+
+def save_cookie(cookie):
+    with open(COOKIE_FILE, "w", encoding="utf-8") as f:
+        json.dump({"cookie": cookie}, f)
+    print("💾 Cookie 已保存至 cookie.json")
+
+def load_cookie():
+    if not os.path.exists(COOKIE_FILE):
+        return None
+    try:
+        with open(COOKIE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data.get("cookie")
+    except Exception as e:
+        print("❌ 加载 cookie 失败：", e)
+        return None
+
+def initSession():
+    print("🔍 正在检查本地 Cookie 是否有效...")
+    cookie = load_cookie()
+    if cookie:
+        try:
+            data = userInteractive.getUserAccount(cookie)
+            if data.get("code") == 200:
+                print(f"✅ 已使用本地 Cookie 登录，用户昵称：{data.get('profile', {}).get('nickname')}")
+                return cookie
+            else:
+                print("⚠️ 本地 Cookie 已失效，将进入登录菜单")
+        except Exception as e:
+            print("❌ 验证本地 Cookie 时出错：", e)
+    return None
 
 def printQRcode(data):
     qr = qrcode.QRCode(
@@ -141,18 +177,27 @@ class LoginProtocol:
 
 
 class userInteractive:
-    def getDownloadUrl(songID, bitRate):
+    def getDownloadUrl(songID, bitRate,cookie=None):
+        if not cookie:
+            cookie = load_cookie()
+        if not cookie:
+            print("⚠️ 当前未登录，无法解析下载链接，请先登录")
+            return None
+        encoded_cookie = urllib.parse.quote(cookie)
         if not bitRate:
             bitRate = 320000
-        url = f"{baseUrl}song/url?id={songID}&bitrate={bitRate}"
+        url = f"{baseUrl}song/download/url?id={songID}&level=lossless&cookie={encoded_cookie}"
+        print("请求链接: ",url)
         response = requests.get(url)
         data = response.json()
-        downloadUrl = data['data'][0]['url']
-        print("解析的下载链接为: ", downloadUrl)
+        downloadUrl = data['data']['url']
+        print("\n解析的下载链接为: ", downloadUrl)
         if downloadUrl == None:
             print("⚠️ 该歌曲可能没有可用的下载链接, 或者是需要VIP才能下载")
             return None
         return downloadUrl
+
+
     def getUserAccount(cookie):
         encoded_cookie = urllib.parse.quote(cookie)  # 相当于 JavaScript 的 encodeURIComponent
         url = f"{baseUrl}user/account?cookie={encoded_cookie}"
@@ -162,9 +207,8 @@ class userInteractive:
         return data
 
 
-def mainMenu():
+def mainMenu(current_cookie=None):
     login = LoginProtocol()
-    current_cookie = None
     
     while True:
         print("\n==== 网易云音乐登录菜单 ====")
@@ -199,7 +243,7 @@ def mainMenu():
                 bitrate = 320000
             else:
                 bitrate = int(bitrate)
-            userInteractive.getDownloadUrl(song_id, bitrate)
+            userInteractive.getDownloadUrl(song_id, bitrate,current_cookie)
         elif choice == "5":
             if current_cookie:
                 userInteractive.getUserAccount(current_cookie)
@@ -214,16 +258,15 @@ def mainMenu():
                 current_cookie = cookie_json.get("cookie")
                 if current_cookie:
                     print("✅ Cookie 导入成功")
+                    save_cookie(current_cookie)  # ✅ 保存导入的 Cookie
                 else:
                     print("⚠️ 未找到有效 cookie 字段")
             except Exception as e:
                 print("❌ 解析失败，请确认格式正确：", e)
         elif choice == "0":
-            print("👋 再见！")
+            print("退出程序")
             break
-        else:
-            print("⚠️ 无效选项，请重试。")
-
 if __name__ == '__main__':
+    current_cookie = initSession()
     mainMenu()
     
