@@ -88,7 +88,11 @@ class LoginProtocol:
             elif code == 803:
                 print("✅ 登录成功！")
                 print("响应数据：", data)
+                #Usage:响应数据： {'code': 803, 'message': '授权登陆成功', 'cookie': 'MUSIC_R_T=1750954032723; Max-Age=2147483647; Expires=Tue, 14 Jul 2093 19:48:34 GMT; Path=/openapi/clientlog;;__csrf=a73e80f3df2ebbaad6fe072ea4e3f4f3; Max-Age=1296010; Expires=Fri, 11 Jul 2025 16:34:37 GMT; Path=/;;MUSIC_R_T=1750954032723; Max-Age=2147483647; Expires=Tue, 14 Jul 2093 19:48:34 GMT; Path=/eapi/clientlog;;MUSIC_U=005C79041294531F507C5568A19B305D6ACC1A9DBB9B605F47E6EA786286D1FB6E6C6BCC5C0982019069674E919A26CF563A40DBCA68364F21934F48B7723B262E4C3C73FFB4F6C9BEDC09A6C8E40882E1E7C73844248FDADCF983C40B0645A497A9CA654A2F51345FE2743D1767E8D79EEEFA96AC957A6F12DDA5C6C192B0D666AE548BBC27DDA18DD5BAC5E83E3A49A7ADD9BF3CBC929437EBCC0896D85DAA77EAEF37EE4D3DBDDC7F603B53D998100F1A62B39B6B7CF5BCA454737640C3DF79F9A3403D22BBE101D66AE474D0C993B4EC08B8FA6A876782D5A34A56DB882C50FE49E0C8AA88888A2A9CE5EB6A98A041AC5612AE469DDCC0CAA181DC7F8D37A7FCE1AB5F37794C277EC88A8B71A1A2030F2937904A02A13D87CA5AEF8DA89F05758AE83D37885306A30357AECDB7EE8AB8B3FB1C93F2E4FF6188AAA0D1E395ACFB2EAE8A1E3721ADC9542823B93C126A; Max-Age=15552000; Expires=Tue, 23 Dec 2025 16:34:27 GMT; Path=/;;MUSIC_A_T=1750954032625; Max-Age=2147483647; Expires=Tue, 14 Jul 2093 19:48:34 GMT; Path=/neapi/feedback;;MUSIC_R_T=1750954032723; Max-Age=2147483647; Expires=Tue, 14 Jul 2093 19:48:34 GMT; Path=/weapi/clientlog;;MUSIC_R_T=1750954032723; Max-Age=2147483647; Expires=Tue, 14 Jul 2093 19:48:34 GMT; Path=/neapi/clientlog;;MUSIC_R_T=1750954032723; Max-Age=2147483647; Expires=Tue, 14 Jul 2093 19:48:34 GMT; Path=/api/feedback;;MUSIC_R_T=1750954032723; Max-Age=2147483647; Expires=Tue, 14 Jul 2093 19:48:34 GMT; Path=/neapi/feedback;;MUSIC_R_T=1750954032723; Max-Age=2147483647; Expires=Tue, 14 Jul 2093 19:48:34 GMT; Path=/wapi/feedback;;MUSIC_A_T=1750954032625; Max-Age=2147483647; Expires=Tue, 14 Jul 2093 19:48:34 GMT; Path=/api/clientlog;;MUSIC_A_T=1750954032625; Max-Age=2147483647; Expires=Tue, 14 Jul 2093 19:48:34 GMT; Path=/weapi/feedback;;MUSIC_A_T=1750954032625; Max-Age=2147483647; Expires=Tue, 14 Jul 2093 19:48:34 GMT; Path=/neapi/clientlog;;MUSIC_R_T=1750954032723; Max-Age=2147483647; Expires=Tue, 14 Jul 2093 19:48:34 GMT; Path=/eapi/feedback;;MUSIC_A_T=1750954032625; Max-Age=2147483647; Expires=Tue, 14 Jul 2093 19:48:34 GMT; Path=/openapi/clientlog;;MUSIC_A_T=1750954032625; Max-Age=2147483647; Expires=Tue, 14 Jul 2093 19:48:34 GMT; Path=/wapi/clientlog;;MUSIC_R_T=1750954032723; Max-Age=2147483647; Expires=Tue, 14 Jul 2093 19:48:34 GMT; Path=/weapi/feedback;;MUSIC_SNS=; Max-Age=0; Expires=Thu, 26 Jun 2025 16:34:27 GMT; Path=/;MUSIC_A_T=1750954032625; Max-Age=2147483647; Expires=Tue, 14 Jul 2093 19:48:34 GMT; Path=/eapi/feedback;;MUSIC_A_T=1750954032625; Max-Age=2147483647; Expires=Tue, 14 Jul 2093 19:48:34 GMT; Path=/wapi/feedback;;MUSIC_A_T=1750954032625; Max-Age=2147483647; Expires=Tue, 14 Jul 2093 19:48:34 GMT; Path=/eapi/clientlog;;MUSIC_R_T=1750954032723; Max-Age=2147483647; Expires=Tue, 14 Jul 2093 19:48:34 GMT; Path=/wapi/clientlog;;MUSIC_A_T=1750954032625; Max-Age=2147483647; Expires=Tue, 14 Jul 2093 19:48:34 GMT; Path=/weapi/clientlog;;MUSIC_R_T=1750954032723; Max-Age=2147483647; Expires=Tue, 14 Jul 2093 19:48:34 GMT; Path=/api/clientlog;;MUSIC_A_T=1750954032625; Max-Age=2147483647; Expires=Tue, 14 Jul 2093 19:48:34 GMT; Path=/api/feedback;'}
+                #{'code': 803, 'message': '授权登陆成功', 'cookie': '123123'}
+                cookie_example = "{'code': 803, 'message': '授权登陆成功', 'cookie': '123123'}"
                 return data.get("cookie")
+            
             else:
                 print("⚠️ 未知状态码：", code, data)
             time.sleep(2)
@@ -97,6 +101,7 @@ class LoginProtocol:
         key = self.getQRKey()
         self.getQRCode(key)
         cookie = self.checkQRStatus(key)
+        return cookie
         
     def SMSLogin(self,phone,captcha):
         url = f"{baseUrl}login/cellphone?phone={phone}&captcha={captcha}"
@@ -134,13 +139,91 @@ class LoginProtocol:
         response = requests.get(url)
         print(response.json())
 
-def getDownloadUrl(songID, bitRate):
-    if not bitRate:
-        bitRate = 320000
-    url = f"{baseUrl}song/url?id={songID}&bitrate={bitRate}"
-    response = requests.get(url)
-    data = response.json()
-    downloadUrl = data['data'][0]['url']
-    print("解析的下载链接为: ", downloadUrl)
-    return downloadUrl
 
+class userInteractive:
+    def getDownloadUrl(songID, bitRate):
+        if not bitRate:
+            bitRate = 320000
+        url = f"{baseUrl}song/url?id={songID}&bitrate={bitRate}"
+        response = requests.get(url)
+        data = response.json()
+        downloadUrl = data['data'][0]['url']
+        print("解析的下载链接为: ", downloadUrl)
+        if downloadUrl == None:
+            print("⚠️ 该歌曲可能没有可用的下载链接, 或者是需要VIP才能下载")
+            return None
+        return downloadUrl
+    def getUserAccount(cookie):
+        encoded_cookie = urllib.parse.quote(cookie)  # 相当于 JavaScript 的 encodeURIComponent
+        url = f"{baseUrl}user/account?cookie={encoded_cookie}"
+        response = requests.get(url)
+        data = response.json()
+        print("用户信息：", data)
+        return data
+
+
+def mainMenu():
+    login = LoginProtocol()
+    current_cookie = None
+    
+    while True:
+        print("\n==== 网易云音乐登录菜单 ====")
+        print("1. 短信验证码登录")
+        print("2. 手机密码登录")
+        print("3. 扫码二维码登录")
+        print("4. 解析歌曲直链")
+        print("5. 获取用户账号信息")
+        print("6. 手动导入 Cookie（JSON 格式）")
+        print("0. 退出程序")
+        choice = input("请选择功能编号：").strip()
+
+        if choice == "1":
+            phone = input("请输入手机号：").strip()
+            login.SMSHandle(phone)
+            # 如果你想支持 cookie 保存，也可以从 login.session.cookies 抽取
+        elif choice == "2":
+            phone = input("请输入手机号：").strip()
+            password = input("请输入密码：").strip()
+            login.PhonePasswordLogin(phone, password)
+            # 同上
+        elif choice == "3":
+            current_cookie = login.qrLogin()  # ✅ 保存返回的 cookie
+        elif choice == "4":
+            song_id = input("请输入歌曲ID（默认520459140）：").strip()
+            if not song_id:
+                song_id = 520459140
+            else:
+                song_id = int(song_id)
+            bitrate = input("请输入音质码率（默认320000）：").strip()
+            if not bitrate:
+                bitrate = 320000
+            else:
+                bitrate = int(bitrate)
+            userInteractive.getDownloadUrl(song_id, bitrate)
+        elif choice == "5":
+            if current_cookie:
+                userInteractive.getUserAccount(current_cookie)
+            else:
+                print("⚠️ 请先登录以获取 cookie，再尝试查看账号信息")
+        elif choice == "6":
+            try:
+                cookie_input = input("请输入完整 JSON 字符串（包含 'cookie' 字段）：\n")
+                # 将单引号替换成双引号，防止用户复制的是 Python 风格
+                import json
+                cookie_json = json.loads(cookie_input.replace("'", '"'))
+                current_cookie = cookie_json.get("cookie")
+                if current_cookie:
+                    print("✅ Cookie 导入成功")
+                else:
+                    print("⚠️ 未找到有效 cookie 字段")
+            except Exception as e:
+                print("❌ 解析失败，请确认格式正确：", e)
+        elif choice == "0":
+            print("👋 再见！")
+            break
+        else:
+            print("⚠️ 无效选项，请重试。")
+
+if __name__ == '__main__':
+    mainMenu()
+    
