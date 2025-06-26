@@ -7,8 +7,8 @@ from PIL import Image
 from pyzbar.pyzbar import decode
 import urllib.parse
 
-#baseUrl = "https://163.0061226.xyz/"
-baseUrl = "http://192.168.101.6:3000/"
+baseUrl = "https://163.0061226.xyz/"
+#baseUrl = "http://192.168.101.6:3000/"
 songID = 520459140
 bitRate = 320000
 
@@ -143,3 +143,4 @@ def getDownloadUrl(songID, bitRate):
     downloadUrl = data['data'][0]['url']
     print("解析的下载链接为: ", downloadUrl)
     return downloadUrl
+
