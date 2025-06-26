@@ -34,29 +34,45 @@ def load_cookie():
         return None
 
 def initSession():
-    print("🔍 正在检查本地 Cookie 是否有效...")
+    print("🔍 正在检查 Cookie 状态...")
+    login = LoginProtocol()  # ✅ 第1行：实例化登录模块
+
     cookie = load_cookie()
     if cookie:
         try:
             data = userInteractive.getUserAccount(cookie)
             if data.get("code") == 200:
-                print(f"✅ 已使用本地 Cookie 登录，用户昵称：{data.get('profile', {}).get('nickname')}")
+                print(f"✅ 当前登录身份：{data.get('profile', {}).get('nickname', '未知')} (UID: {data.get('account', {}).get('id')})")
                 return cookie
             else:
-                print("⚠️ 本地 Cookie 已失效，将进入登录菜单")
+                print("⚠️ Cookie 已失效，将尝试使用游客身份登录")
         except Exception as e:
-            print("❌ 验证本地 Cookie 时出错：", e)
-    return None
+            print("❌ Cookie 校验失败：", e)
+            print("➡️ 正在尝试游客身份登录...")  # ✅ 第2行：出错时切换游客流程
 
+    try:
+        guest_cookie = login.guestLogin()  # ✅ 第3行：调用游客登录
+        save_cookie(guest_cookie)          # ✅ 第4行：保存游客 Cookie
+        print("✅ 已使用游客身份登录")
+        return guest_cookie
+    except Exception as e:
+        print("❌ 游客身份登录失败：", e)
+        return None
+
+# 定义一个函数，用于打印二维码
 def printQRcode(data):
+    # 创建一个QRCode对象，设置版本、错误纠正级别、每个小方格的像素大小、边框大小
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_L,
         box_size=1,
         border=1
     )
+    # 向QRCode对象中添加数据
     qr.add_data(data)
+    # 生成二维码
     qr.make(fit=True)
+    # 打印二维码，并设置反转颜色
     qr.print_ascii(invert=True)
 
 
@@ -73,6 +89,22 @@ class LoginProtocol:
         'Cache-Control': 'max-age=0',
         }
 
+    def guestLogin(self):
+        url = f"{baseUrl}register/anonimous"
+        response = self.session.get(url)
+        response = response.json()
+
+        # ✅ 正确解析 cookie 字段（第 144 行）
+        if "cookie" in response:
+            print("🌐 游客 Cookie 获取成功")
+            # ✅ 保存到独立的文件 cookie-guest.json
+            with open("cookie-guest.json", "w", encoding="utf-8") as f:
+                json.dump({"cookie": response["cookie"]}, f)
+            return response["cookie"]
+        else:
+            print("❌ 游客登录返回异常：", response)
+            raise ValueError("游客登录失败，响应中缺少 cookie 字段")
+    
     def getLoginInfo(self):
         url = f"{baseUrl}user/account"
         response = requests.get(url)
@@ -180,12 +212,16 @@ class userInteractive:
     def getDownloadUrl(songID, bitRate,cookie=None):
         if not cookie:
             cookie = load_cookie()
-        if not cookie:
-            print("⚠️ 当前未登录，无法解析下载链接，请先登录")
-            return None
-        encoded_cookie = urllib.parse.quote(cookie)
+            if not cookie:
+                print("⚠️ 当前未登录，部分歌曲可能无法解析")
+        else:
+            encoded_cookie = urllib.parse.quote(cookie)
         if not bitRate:
             bitRate = 320000
+        if encoded_cookie == "":
+
+            print("⚠️ Cookie 不能为空，请先登录获取有效的 Cookie")
+            return None
         url = f"{baseUrl}song/download/url?id={songID}&level=lossless&cookie={encoded_cookie}"
         print("请求链接: ",url)
         response = requests.get(url)
@@ -209,7 +245,8 @@ class userInteractive:
 
 def mainMenu(current_cookie=None):
     login = LoginProtocol()
-    
+    if current_cookie is None:
+        current_cookie = load_cookie()
     while True:
         print("\n==== 网易云音乐登录菜单 ====")
         print("1. 短信验证码登录")
@@ -218,6 +255,7 @@ def mainMenu(current_cookie=None):
         print("4. 解析歌曲直链")
         print("5. 获取用户账号信息")
         print("6. 手动导入 Cookie（JSON 格式）")
+        print("7. 退出登录")
         print("0. 退出程序")
         choice = input("请选择功能编号：").strip()
 
@@ -231,11 +269,13 @@ def mainMenu(current_cookie=None):
             login.PhonePasswordLogin(phone, password)
             # 同上
         elif choice == "3":
-            current_cookie = login.qrLogin()  # ✅ 保存返回的 cookie
+            current_cookie = login.qrLogin()
+            if current_cookie:
+                save_cookie(current_cookie)  # ✅ 保存扫码后的 cookie
         elif choice == "4":
-            song_id = input("请输入歌曲ID（默认520459140）：").strip()
+            song_id = input("请输入歌曲ID（默认2048955734）：").strip()
             if not song_id:
-                song_id = 520459140
+                song_id = 2048955734
             else:
                 song_id = int(song_id)
             bitrate = input("请输入音质码率（默认320000）：").strip()
@@ -266,7 +306,8 @@ def mainMenu(current_cookie=None):
         elif choice == "0":
             print("退出程序")
             break
+        elif choice == "7":
+            login.Logout()
 if __name__ == '__main__':
     current_cookie = initSession()
     mainMenu()
-    
