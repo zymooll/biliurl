@@ -1,6 +1,7 @@
 import requests
 import json
-import pyqrcode
+import qrcode
+import base64
 from io import BytesIO
 from PIL import Image
 from pyzbar.pyzbar import decode
@@ -11,6 +12,19 @@ baseUrl = "https://163.0061226.xyz/"
 #bitRate = int(input("Enter the bit rate: "))
 songID = 520459140
 bitRate = 320000
+
+def printQRcode(data):
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=1,
+        border=1
+    )
+    qr.add_data(data)
+    qr.make(fit=True)
+
+    qr.print_ascii(invert=True)
+
 
 class LoginProtocol:
     def __init__(self):
@@ -37,16 +51,29 @@ class LoginProtocol:
         Info = " 登录状态: " + str(isLogin)
         return Info
 
-    def getQRKey(self):
+    def getQRKey():
         url = f"{baseUrl}login/qr/key"
         response = requests.get(url)
         response = response.json()
         #{"data":{"code":200,"unikey":"xxx"},"code":200}
         return response["data"]["unikey"]
     
-    def getQRCode(self, key):
-        #TODO 这里需要用到pyqrcode库生成二维码
-        url = f"{baseUrl}login/qrlogin.html"
+    def getQRCode(key):
+        url = f"{baseUrl}login/qr/create?key={key}&qrimg=true"
+        response = requests.get(url).json()
+        baseStr = response["data"]["qrimg"].split(",", 1)[1]
+        img_data = base64.b64decode(baseStr)
+        image = Image.open(BytesIO(img_data))
+
+        decoded = decode(image)
+        if not decoded:
+            print("二维码无法识别")
+            return
+
+        QRText = decoded[0].data.decode()
+        print("● 二维码内容:", QRText)
+        print("● 请扫码登录：\n")
+        printQRcode(QRText)
 
     def sendSMSCode(self, phone):
         url = f"{baseUrl}captcha/sent?phone={phone}"
@@ -86,6 +113,8 @@ class LoginProtocol:
             return False
 
 
+
+
 def getDonwloadUrl(songID,bitRate):
     #下载API:/song/download/url
     #试听API:/song/url
@@ -97,3 +126,5 @@ def getDonwloadUrl(songID,bitRate):
     print("解析的Url为: " + downloadUrl)
     return downloadUrl
 
+key = LoginProtocol.getQRKey()
+LoginProtocol.getQRCode(key)
