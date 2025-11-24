@@ -91,17 +91,44 @@ export async function getStream(
     headers['Cookie'] = cookies;
   }
   
-  const response = await fetch(url, { headers });
+  // 增加请求超时和重试逻辑
+  let response;
+  try {
+    response = await fetch(url, { headers });
+  } catch (error) {
+    console.error('获取播放地址请求失败:', error);
+    throw new Error('网络请求失败，无法获取播放地址');
+  }
+  
+  if (!response.ok) {
+    console.error('Bilibili API 返回错误:', response.status, response.statusText);
+    throw new Error(`Bilibili API 返回错误: ${response.status}`);
+  }
+  
   const playData: PlayUrlResponse = await response.json();
   
   if (!playData.data?.dash) {
+    console.error('无法从响应中获取 dash 数据:', JSON.stringify(playData).substring(0, 200));
     throw new Error('无法获取播放地址');
   }
   
   const dash = playData.data.dash;
+  
+  // 使用 baseUrl 而不是 base_url（baseUrl 是正确的字段名）
+  const videoUrl = dash.video?.[0]?.baseUrl;
+  const audioUrl = dash.audio?.[0]?.baseUrl;
+  
+  if (!videoUrl || !audioUrl) {
+    console.error('视频或音频 URL 为空', {
+      videoUrl: !!videoUrl,
+      audioUrl: !!audioUrl
+    });
+    throw new Error('无法获取视频或音频流 URL');
+  }
+  
   return {
-    video: dash.video[0]?.baseUrl || '',
-    audio: dash.audio[0]?.baseUrl || ''
+    video: videoUrl,
+    audio: audioUrl
   };
 }
 

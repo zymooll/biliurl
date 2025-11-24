@@ -60,7 +60,25 @@ app.get('/api/docs', (c: any) => {
         streams: {
           method: 'GET',
           path: '/api/bili/:bvid/streams',
-          description: '获取视频流 URLs'
+          description: '获取视频流 URLs（包含签名，需要在浏览器中访问）'
+        },
+        proxyVideo: {
+          method: 'GET',
+          path: '/api/bili/:bvid/proxy-video',
+          description: '通过 Workers 代理获取视频流（解决 403 跨域问题）',
+          parameters: {
+            key: { required: true, description: 'API Key' },
+            quality: { required: false, description: '画质代码' }
+          }
+        },
+        proxyAudio: {
+          method: 'GET',
+          path: '/api/bili/:bvid/proxy-audio',
+          description: '通过 Workers 代理获取音频流（解决 403 跨域问题）',
+          parameters: {
+            key: { required: true, description: 'API Key' },
+            quality: { required: false, description: '画质代码' }
+          }
         }
       }
     }
