@@ -30,11 +30,28 @@ temp_dir.mkdir(parents=True, exist_ok=True)
 output_dir.mkdir(parents=True, exist_ok=True)
 
 def getCid(bvid):
-    """Get the cid of video by bvid"""
+    """Get the cid of video by bvid and return video info"""
     respCid = requests.get('https://api.bilibili.com/x/player/pagelist?bvid=' + bvid, headers=headers)
     plist = respCid.json()
     cid = str(plist['data'][0]['cid'])
     return cid
+
+def getVideoInfo(bvid):
+    """Get video info including title, description, etc."""
+    respInfo = requests.get('https://api.bilibili.com/x/web-interface/view?bvid=' + bvid, headers=headers)
+    info = respInfo.json()
+    if info['code'] == 0:
+        data = info['data']
+        return {
+            'title': data.get('title', ''),
+            'description': data.get('desc', ''),
+            'duration': data.get('duration', 0),
+            'author': data.get('owner', {}).get('name', ''),
+            'cover': data.get('pic', ''),
+            'pubdate': data.get('pubdate', 0),
+            'bvid': bvid
+        }
+    return None
 
 def getStream(bvid, cid, quality):
     """Get video&audio stream urls by cid"""
@@ -72,11 +89,20 @@ def get_stream(bvid):
     try:
         stream_type = request.args.get('type', 'video').lower()
         
-        if stream_type not in ['video', 'audio']:
-            return jsonify({'error': 'Invalid type. Use type=video or type=audio'}), 400
+        if stream_type not in ['video', 'audio', 'raw']:
+            return jsonify({'error': 'Invalid type. Use type=video, type=audio, or type=raw'}), 400
         
         cid = getCid(bvid)
         streamUrl = getStream(bvid, cid, '-1')
+        video_info = getVideoInfo(bvid)
+        
+        if stream_type == 'raw':
+            return jsonify({
+                'info': video_info,
+                'video': streamUrl[0],
+                'audio': streamUrl[1]
+            })
+        
         videoData, audioData = downloadStream(streamUrl)
         
         if stream_type == 'video':
