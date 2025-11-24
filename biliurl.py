@@ -1,8 +1,9 @@
 import requests
 import json
-import ffmpeg
 import time
 import os
+import subprocess
+from pathlib import Path
 
 headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
@@ -15,8 +16,12 @@ headers = {
     'Origin': 'https://www.bilibili.com',
     'Referer': 'https://www.bilibili.com'
 }
-tempVideoFile='temp\\video.m4s'
-tempAudioFile='temp\\audio.m4s'
+
+# Use pathlib for cross-platform paths
+temp_dir = Path('temp')
+output_dir = Path('output')
+tempVideoFile = temp_dir / 'video.m4s'
+tempAudioFile = temp_dir / 'audio.m4s'
 
 #get the cid of video by bvid
 def getCid(bvid):
@@ -35,31 +40,63 @@ def getStream(bvid,cid,quality):
 
 #download video&audio stream
 def downloadStream(streamUrl,videoFile=tempVideoFile,audioFile=tempAudioFile): # 0:video 1:audio
-    respVideo=requests.get(streamUrl[0],headers=headers)
-    with open(videoFile,'wb') as f:
-        f.write(respVideo.content)
-    respAudio=requests.get(streamUrl[1],headers=headers)
-    with open(audioFile,'wb') as f:
-        f.write(respAudio.content)
+    # ensure temp dir exists
+    temp_dir.mkdir(parents=True, exist_ok=True)
+
+    # stream download to avoid loading whole file into memory
+    respVideo = requests.get(streamUrl[0], headers=headers, stream=True)
+    respVideo.raise_for_status()
+    with open(videoFile, 'wb') as f:
+        for chunk in respVideo.iter_content(chunk_size=8192):
+            if chunk:
+                f.write(chunk)
+
+    respAudio = requests.get(streamUrl[1], headers=headers, stream=True)
+    respAudio.raise_for_status()
+    with open(audioFile, 'wb') as f:
+        for chunk in respAudio.iter_content(chunk_size=8192):
+            if chunk:
+                f.write(chunk)
 
 #integrate video&audio stream
 def integrateStream(outputFile,videoFile=tempVideoFile,audioFile=tempAudioFile):
-    command=f'ffmpeg -i '+videoFile+' -i '+audioFile+' -c:v copy -c:a copy '+outputFile
-    os.system(command)
+    # ensure output dir exists
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # call ffmpeg safely using a list of args
+    cmd = [
+        'ffmpeg', '-y',
+        '-i', str(videoFile),
+        '-i', str(audioFile),
+        '-c:v', 'copy',
+        '-c:a', 'copy',
+        str(outputFile)
+    ]
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        print('ffmpeg failed:', e)
 
 #remove temp downloaded file
 def removeTempFile():
-    os.remove(tempVideoFile)
-    os.remove(tempAudioFile)
+    for p in (tempVideoFile, tempAudioFile):
+        try:
+            if p.exists():
+                p.unlink()
+        except Exception as e:
+            print(f'failed to remove {p}:', e)
 
-infos=[['BV1HfK3zPEHE',-2]]
+infos = [['BV1HfK3zPEHE', -1]]
 
 for info in infos:
-    bvid=info[0]
-    quality=str(info[1]) #-1:360p -2:480p -3:720p -4:1080p
-    print(bvid,quality)
-    cid=getCid(bvid)
-    streamUrl=getStream(bvid,cid,quality)
+    bvid = info[0]
+    quality = str(info[1])  # -1:360p -2:480p -3:720p -4:1080p
+    print(bvid, quality)
+    cid = getCid(bvid)
+    streamUrl = getStream(bvid, cid, quality)
     downloadStream(streamUrl)
-    integrateStream('output\\BillUrl-'+time.strftime('%Y-%m-%d-%H-%M-%S',time.localtime())+'.mp4')
+
+    timestamp = time.strftime('%Y-%m-%d-%H-%M-%S', time.localtime())
+    output_file = output_dir / f'BillUrl-{timestamp}.mp4'
+    integrateStream(output_file)
     removeTempFile()
