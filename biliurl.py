@@ -4,6 +4,7 @@ import time
 import os
 import subprocess
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
@@ -42,21 +43,28 @@ def getStream(bvid,cid,quality):
 def downloadStream(streamUrl,videoFile=tempVideoFile,audioFile=tempAudioFile): # 0:video 1:audio
     # ensure temp dir exists
     temp_dir.mkdir(parents=True, exist_ok=True)
+    # helper to download a single URL to a path
+    def _download_to_path(url, path):
+        resp = requests.get(url, headers=headers, stream=True)
+        resp.raise_for_status()
+        with open(path, 'wb') as f:
+            for chunk in resp.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
 
-    # stream download to avoid loading whole file into memory
-    respVideo = requests.get(streamUrl[0], headers=headers, stream=True)
-    respVideo.raise_for_status()
-    with open(videoFile, 'wb') as f:
-        for chunk in respVideo.iter_content(chunk_size=8192):
-            if chunk:
-                f.write(chunk)
-
-    respAudio = requests.get(streamUrl[1], headers=headers, stream=True)
-    respAudio.raise_for_status()
-    with open(audioFile, 'wb') as f:
-        for chunk in respAudio.iter_content(chunk_size=8192):
-            if chunk:
-                f.write(chunk)
+    # download video and audio in parallel
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = {
+            executor.submit(_download_to_path, streamUrl[0], videoFile): 'video',
+            executor.submit(_download_to_path, streamUrl[1], audioFile): 'audio'
+        }
+        for fut in as_completed(futures):
+            name = futures[fut]
+            try:
+                fut.result()
+            except Exception as e:
+                print(f'{name} download failed:', e)
+                raise
 
 #integrate video&audio stream
 def integrateStream(outputFile,videoFile=tempVideoFile,audioFile=tempAudioFile):
