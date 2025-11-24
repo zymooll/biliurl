@@ -86,27 +86,5 @@ def get_stream(bvid):
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
-@app.route('/api/bili/<bvid>/video', methods=['GET'])
-def get_video(bvid):
-    """Get video stream for a bilibili video"""
-    try:
-        cid = getCid(bvid)
-        streamUrl = getStream(bvid, cid, '-1')
-        videoData, _ = downloadStream(streamUrl)
-        return send_file(videoData, mimetype='video/mp4', as_attachment=True, download_name=f'{bvid}.mp4')
-    except Exception as e:
-        return jsonify({'error': str(e)}), 400
-
-@app.route('/api/bili/<bvid>/audio', methods=['GET'])
-def get_audio(bvid):
-    """Get audio stream for a bilibili video"""
-    try:
-        cid = getCid(bvid)
-        streamUrl = getStream(bvid, cid, '-1')
-        _, audioData = downloadStream(streamUrl)
-        return send_file(audioData, mimetype='audio/mp4', as_attachment=True, download_name=f'{bvid}.m4a')
-    except Exception as e:
-        return jsonify({'error': str(e)}), 400
-
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=8000)
