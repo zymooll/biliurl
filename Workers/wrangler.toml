@@ -1,0 +1,16 @@
+name = "biliurl-workers"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[env.production]
+route = "https://your-domain.com/api/*"
+zone_id = "your_zone_id"
+
+# KV 命名空间用于存储 cookies 和 API 密钥信息
+[[kv_namespaces]]
+binding = "COOKIES_KV"
+id = "your_kv_id"
+
+# 环境变量
+[env.production.vars]
+API_KEYS_CONFIG = '{"public_j389u4tc9w08u4pq4mqp9xwup4": {"max_quality": "64", "name": "720p 限制"}}'
