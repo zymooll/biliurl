@@ -66,10 +66,13 @@ def integrateStream(outputFile,videoFile=tempVideoFile,audioFile=tempAudioFile):
     # call ffmpeg safely using a list of args
     cmd = [
         'ffmpeg', '-y',
+        '-fflags', '+igndts',
         '-i', str(videoFile),
+        '-fflags', '+igndts',
         '-i', str(audioFile),
         '-c:v', 'copy',
-        '-c:a', 'copy',
+        '-c:a', 'aac',
+        '-b:a', '128k',
         str(outputFile)
     ]
     try:
@@ -99,4 +102,4 @@ for info in infos:
     timestamp = time.strftime('%Y-%m-%d-%H-%M-%S', time.localtime())
     output_file = output_dir / f'BillUrl-{timestamp}.mp4'
     integrateStream(output_file)
-    removeTempFile()
+    #removeTempFile()
