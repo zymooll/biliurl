@@ -3,11 +3,17 @@ import json
 import time
 import os
 import subprocess
+import hmac
+import hashlib
 from pathlib import Path
 from flask import Flask, send_file, jsonify, request
 from io import BytesIO
 
 app = Flask(__name__)
+
+# API 配置
+API_KEY = 'j40895nctyw34hpq9384udpmeg9854y985P(*YNP(*Y$P(W*YC)))' 
+TIMESTAMP_TOLERANCE = 300  # 时间戳容差（秒），防止时钟不同步
 
 headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
@@ -20,6 +26,36 @@ headers = {
     'Origin': 'https://www.bilibili.com',
     'Referer': 'https://www.bilibili.com'
 }
+
+def verify_request():
+    """验证 API Key 和时间戳"""
+    api_key = request.args.get('key') or request.headers.get('X-API-Key')
+    timestamp = request.args.get('ts') or request.headers.get('X-Timestamp')
+    signature = request.args.get('sig') or request.headers.get('X-Signature')
+    
+    if not api_key or not timestamp or not signature:
+        return False, {'error': '缺少 API Key、时间戳或签名'}
+    
+    # 验证 API Key
+    if api_key != API_KEY:
+        return False, {'error': '无效的 API Key'}
+    
+    # 验证时间戳
+    try:
+        ts = int(timestamp)
+        current_time = int(time.time())
+        if abs(current_time - ts) > TIMESTAMP_TOLERANCE:
+            return False, {'error': '时间戳过期或不有效'}
+    except (ValueError, TypeError):
+        return False, {'error': '无效的时间戳格式'}
+    
+    # 验证签名
+    sign_str = f"{api_key}:{timestamp}"
+    expected_sig = hmac.new(API_KEY.encode(), sign_str.encode(), hashlib.sha256).hexdigest()
+    if signature != expected_sig:
+        return False, {'error': '签名验证失败'}
+    
+    return True, None
 
 # Use pathlib for cross-platform paths
 temp_dir = Path('temp')
@@ -87,6 +123,11 @@ def downloadStream(streamUrl):
 def get_stream(bvid):
     """Get video or audio stream for a bilibili video"""
     try:
+        # 验证请求
+        is_valid, error = verify_request()
+        if not is_valid:
+            return jsonify(error), 401
+        
         stream_type = request.args.get('type', 'video').lower()
         
         if stream_type not in ['video', 'audio', 'raw']:
