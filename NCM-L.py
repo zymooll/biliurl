@@ -8,7 +8,9 @@ from pyzbar.pyzbar import decode
 import urllib.parse
 import os
 import json
-
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import JSONResponse
+import uvicorn
 
 # 全局配置
 API_BASE_URL = "http://localhost:3000/"
@@ -18,6 +20,9 @@ DEFAULT_SONG_ID = 520459140
 DEFAULT_BIT_RATE = 320000
 COOKIE_FILE = "cookie.json"
 GUEST_COOKIE_FILE = "cookie-guest.json"
+
+app = FastAPI(title="NCM API Service")
+login_handler = None # 将在 startup 时初始化
 
 def save_cookie(cookie, filename=COOKIE_FILE):
     """保存Cookie到文件"""
@@ -63,18 +68,6 @@ def initSession():
     except Exception as e:
         print("❌ 游客身份登录失败：", e)
         return None
-
-def printQRcode(data):
-    """打印二维码到终端"""
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=1,
-        border=1
-    )
-    qr.add_data(data)
-    qr.make(fit=True)
-    qr.print_ascii(invert=True)
 
 class LoginProtocol:
     """网易云音乐登录协议实现"""
@@ -139,8 +132,6 @@ class LoginProtocol:
         try:
             # 使用实例的session对象而非全局requests
             resp = self.session.get(url, headers=headers)
-            print("[DEBUG] 状态码:", resp.status_code)
-            print("[DEBUG] 响应内容:", resp.text[:200])
             response = resp.json()
             return response["data"]["unikey"]
         except Exception as e:
@@ -153,136 +144,35 @@ class LoginProtocol:
         url = f"{API_BASE_URL}login/qr/create?key={key}&qrimg=true"
         try:
             response = requests.get(url).json()
-            baseStr = response["data"]["qrimg"].split(",", 1)[1]
-            img_data = base64.b64decode(baseStr)
-            image = Image.open(BytesIO(img_data))
-            decoded = decode(image)
-            if not decoded:
-                print("二维码无法识别")
-                return
-            QRText = decoded[0].data.decode()
-            print("● 二维码内容:", QRText)
-            print("● 请扫码登录：\n")
-            printQRcode(QRText)
+            return response["data"]["qrimg"] # 返回 base64 图片字符串
         except Exception as e:
             print(f"❌ 获取QR码失败: {e}")
             raise
 
     def checkQRStatus(self, key):
         """检查二维码扫描状态"""
-        print("传入的key: ", key)
         try:
-            while True:
-                timestamp = int(time.time() * 1000)
-                url = f"{API_BASE_URL}login/qr/check?key={key}&timestamp={timestamp}"
+            timestamp = int(time.time() * 1000)
+            url = f"{API_BASE_URL}login/qr/check?key={key}&timestamp={timestamp}"
 
-                resp = self.session.get(url, headers=self.headers)
-                data = resp.json()
-                code = data.get("code")
-
-                if code == 800:
-                    print("❌ 二维码已过期")
-                    return None
-                elif code == 801:
-                    print("⌛ 等待扫码中...")
-                elif code == 802:
-                    print("📱 已扫码，请手机确认...")
-                elif code == 803:
-                    print("✅ 登录成功！")
-                    print("响应数据：", data)
-                    return data.get("cookie")
-                else:
-                    print("⚠️ 未知状态码：", code, data)
-                time.sleep(1)
+            resp = self.session.get(url, headers=self.headers)
+            data = resp.json()
+            return data
         except Exception as e:
             print(f"❌ 检查QR状态时出错: {e}")
-            return None
+            return {"code": -1, "message": str(e)}
 
-    def qrLogin(self):
-        """使用二维码登录流程"""
-        try:
-            key = self.getQRKey()
-            self.getQRCode(key)
-            cookie = self.checkQRStatus(key)
-            return cookie
-        except Exception as e:
-            print(f"❌ QR登录流程出错: {e}")
-            return None
-        
-    def SMSLogin(self, phone, captcha):
-        """短信验证码登录"""
-        url = f"{API_BASE_URL}login/cellphone?phone={phone}&captcha={captcha}"
-        try:
-            response = requests.get(url)
-            response_data = response.json()
-            print(response_data)
-            return response_data.get("cookie")
-        except Exception as e:
-            print(f"❌ 短信登录失败: {e}")
-            return None
-
-    def sendSMS(self, phone):
-        """发送短信验证码"""
-        url = f"{API_BASE_URL}captcha/sent?phone={phone}"
-        try:
-            sendSMSResponse = requests.get(url)
-            print(sendSMSResponse.json())
-        except Exception as e:
-            print(f"❌ 发送短信失败: {e}")
-
-    def verifySMS(self, phone, captcha):
-        """验证短信验证码"""
-        url = f"{API_BASE_URL}captcha/verify?phone={phone}&captcha={captcha}"
-        try:
-            verifySMSResponse = requests.get(url)
-            response_data = verifySMSResponse.json()
-            print(response_data)
-            if response_data.get("code") != 200:
-                print("验证码错误或登录失败")
-                return False
-            else:
-                cookie = self.SMSLogin(phone, captcha)
-                if cookie:
-                    save_cookie(cookie)
-                    return True
-                return False
-        except Exception as e:
-            print(f"❌ 验证短信失败: {e}")
-            return False
-
-    def SMSHandle(self, phone):
-        """短信验证码登录流程处理"""
-        self.sendSMS(phone)
-        captcha = input("请输入验证码：")
-        return self.verifySMS(phone, captcha)
-
-    def PhonePasswordLogin(self, phone, password):
-        """手机号密码登录"""
-        url = f"{API_BASE_URL}login/cellphone?phone={phone}&password={password}"
-        try:
-            response = requests.get(url)
-            response_data = response.json()
-            print(response_data)
-            cookie = response_data.get("cookie")
-            if cookie:
-                save_cookie(cookie)
-                return cookie
-            return None
-        except Exception as e:
-            print(f"❌ 密码登录失败: {e}")
-            return None
-        
     def Logout(self):
         """退出登录"""
         url = f"{API_BASE_URL}logout"
         try:
             response = requests.get(url)
-            print(response.json())
             if os.path.exists(COOKIE_FILE):
                 os.remove(COOKIE_FILE)
-                print("✅ Cookie文件已删除")
+            return response.json()
         except Exception as e:
             print(f"❌ 退出登录失败: {e}")
+            return {"code": -1, "message": str(e)}
 
 
 class UserInteractive:
@@ -345,24 +235,24 @@ class UserInteractive:
                 downloadUrl = song_info.get('url')
 
             if not downloadUrl:
-                print(f"❌ 解析失败。API 响应: {data}")
-                return None
+                return {"success": False, "data": data}
             
-            print(f"\n✅ 解析成功！")
-            print(f"🎵 实际音质: {song_info.get('level', '未知')}")
-            print(f"🔗 下载链接: {downloadUrl}")
-            return downloadUrl
+            return {
+                "success": True,
+                "level": song_info.get('level', '未知'),
+                "url": downloadUrl,
+                "raw": song_info
+            }
 
         except Exception as e:
             print(f"❌ 获取下载链接失败: {e}")
-            return None
+            return {"success": False, "error": str(e)}
 
     @staticmethod
     def getUserAccount(cookie):
         """获取用户账号信息"""
         try:
             if not cookie:
-                print("⚠️ Cookie为空，无法获取用户信息")
                 return None
                 
             encoded_cookie = urllib.parse.quote(cookie)
@@ -370,128 +260,86 @@ class UserInteractive:
             
             response = requests.get(url)
             data = response.json()
-            print("用户信息：", data)
             return data
         except Exception as e:
             print(f"❌ 获取用户信息失败: {e}")
             return None
 
+# --- API Endpoints ---
 
-def mainMenu(current_cookie=None):
-    """主菜单交互功能"""
-    login = LoginProtocol()
-    if current_cookie is None:
-        current_cookie = load_cookie()
-        
-    while True:
-        print("\n==== 网易云音乐登录菜单 ====")
-        print("1. 短信验证码登录")
-        print("2. 手机密码登录")
-        print("3. 扫码二维码登录")
-        print("4. 解析歌曲直链")
-        print("5. 获取用户账号信息")
-        print("6. 手动导入 Cookie（JSON 格式）")
-        print("7. 退出登录")
-        print("0. 退出程序")
-        
-        try:
-            choice = input("请选择功能编号：").strip()
-            
-            if choice == "1":
-                phone = input("请输入手机号：").strip()
-                if login.SMSHandle(phone):
-                    print("✅ 短信登录成功")
-                    current_cookie = load_cookie()
-                
-            elif choice == "2":
-                phone = input("请输入手机号：").strip()
-                password = input("请输入密码：").strip()
-                cookie = login.PhonePasswordLogin(phone, password)
-                if cookie:
-                    current_cookie = cookie
-                    print("✅ 密码登录成功")
-                
-            elif choice == "3":
-                new_cookie = login.qrLogin()
-                if new_cookie:
-                    save_cookie(new_cookie)
-                    current_cookie = new_cookie  # 修复这一行
-                    print("✅ 二维码登录成功")
-                    
-            elif choice == "4":
-                try:
-                    song_id = input("请输入歌曲ID（默认520459140）：").strip()
-                    if not song_id:
-                        song_id = DEFAULT_SONG_ID
-                    else:
-                        song_id = int(song_id)
-                        
-                    print("\n可选音质等级：")
-                    print("1. standard (标准)")
-                    print("2. higher (较高)")
-                    print("3. exhigh (极高)")
-                    print("4. lossless (无损)")
-                    print("5. hires (Hi-Res)")
-                    level_choice = input("请选择音质编号（默认 3）：").strip()
-                    
-                    level_map = {
-                        "1": "standard",
-                        "2": "higher",
-                        "3": "exhigh",
-                        "4": "lossless",
-                        "5": "hires"
-                    }
-                    level = level_map.get(level_choice, "exhigh")
+@app.on_event("startup")
+async def startup_event():
+    global login_handler
+    login_handler = LoginProtocol()
+    initSession()
 
-                    unblock_choice = input("是否尝试解灰/VIP破解 (y/n，默认 n)：").strip().lower()
-                    unblock = True if unblock_choice == 'y' else False
-                        
-                    UserInteractive.getDownloadUrl(song_id, level, unblock, current_cookie)
-                except ValueError as e:
-                    print(f"❌ 输入格式错误: {e}")
-                    
-            elif choice == "5":
-                if current_cookie:
-                    UserInteractive.getUserAccount(current_cookie)
-                else:
-                    print("⚠️ 请先登录以获取 cookie，再尝试查看账号信息")
-                    
-            elif choice == "6":
-                try:
-                    cookie_input = input("请输入完整 JSON 字符串（包含 'cookie' 字段）：\n")
-                    # 将单引号替换成双引号，防止用户复制的是 Python 风格
-                    cookie_json = json.loads(cookie_input.replace("'", '"'))
-                    imported_cookie = cookie_json.get("cookie")
-                    if imported_cookie:
-                        current_cookie = imported_cookie
-                        save_cookie(current_cookie)
-                        print("✅ Cookie 导入成功")
-                    else:
-                        print("⚠️ 未找到有效 cookie 字段")
-                except Exception as e:
-                    print(f"❌ 解析失败，请确认格式正确：{e}")
-                    
-            elif choice == "7":
-                login.Logout()
-                current_cookie = None
-                print("✅ 已退出登录")
-                
-            elif choice == "0":
-                print("👋 感谢使用，再见！")
-                break
-                
-            else:
-                print("⚠️ 无效的选择，请重新输入")
-                
-        except Exception as e:
-            print(f"❌ 操作出错: {e}")
+@app.get("/login/qr/key")
+async def get_qr_key():
+    """1. 获取扫码登录所需的 Key"""
+    try:
+        key = login_handler.getQRKey()
+        return {"code": 200, "unikey": key}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/login/qr/create")
+async def create_qr_code(key: str):
+    """2. 根据 Key 生成二维码 (返回 base64)"""
+    try:
+        qrimg = login_handler.getQRCode(key)
+        return {"code": 200, "qrimg": qrimg}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/login/qr/check")
+async def check_qr_status(key: str):
+    """3. 检查扫码状态"""
+    try:
+        data = login_handler.checkQRStatus(key)
+        if data.get("code") == 803:
+            # 登录成功，保存 Cookie
+            cookie = data.get("cookie")
+            save_cookie(cookie)
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/user/cookie")
+async def get_current_cookie():
+    """4. 查询当前保存的 Cookie"""
+    cookie = load_cookie()
+    if not cookie:
+        return {"code": 404, "message": "未找到已保存的 Cookie"}
+    return {"code": 200, "cookie": cookie}
+
+@app.get("/user/info")
+async def get_user_info():
+    """5. 获取当前登录用户信息"""
+    cookie = load_cookie()
+    if not cookie:
+        raise HTTPException(status_code=401, detail="未登录")
+    data = UserInteractive.getUserAccount(cookie)
+    return data
+
+@app.get("/resolve")
+async def resolve_song(
+    id: int, 
+    level: str = "exhigh", 
+    unblock: bool = False
+):
+    """6. 直链解析 (传入 id，返回直链)"""
+    cookie = load_cookie()
+    result = UserInteractive.getDownloadUrl(id, level, unblock, cookie)
+    if result["success"]:
+        return result
+    else:
+        return JSONResponse(status_code=400, content=result)
+
+@app.get("/logout")
+async def logout():
+    """7. 退出登录"""
+    return login_handler.Logout()
 
 if __name__ == "__main__":
-    try:
-        cookie = initSession()
-        mainMenu(cookie)
-    except KeyboardInterrupt:
-        print("\n👋 程序被用户中断，再见！")
-    except Exception as e:
-        print(f"\n❌ 程序遇到未处理的异常: {e}")
+    # 启动 API 服务
+    uvicorn.run(app, host="0.0.0.0", port=8000)
