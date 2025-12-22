@@ -11,7 +11,8 @@ import json
 
 
 # 全局配置
-API_BASE_URL = "https://163.0061226.xyz/"
+API_BASE_URL = "http://localhost:3000/"
+#API_BASE_URL = "https://163.0061226.xyz/"
 #API_BASE_URL = "http://192.168.101.6:3000/"
 DEFAULT_SONG_ID = 520459140
 DEFAULT_BIT_RATE = 320000
@@ -299,8 +300,6 @@ class UserInteractive:
                     "id": songID,
                     "level": current_level,
                     "unblock": "true" if current_unblock else "false",
-                    # 尝试添加 realIP 参数，伪装成国内常见 IP (例如深圳电信)，或者你可以改为你自己的公网 IP
-                    "realIP": "116.25.146.177", 
                 }
                 if current_cookie:
                     # 确保包含 os=pc 且格式正确
@@ -313,7 +312,7 @@ class UserInteractive:
                     params["source"] = "migu,qq"
                 
                 url = f"{API_BASE_URL}song/url/v1"
-                print(f"📡 正在请求: {current_level} (VIP={bool(current_cookie)}, Unblock={current_unblock}, realIP={params['realIP']})")
+                print(f"📡 正在请求: {current_level} (VIP={bool(current_cookie)}, Unblock={current_unblock})")
                 resp = requests.get(url, params=params)
                 return resp.json()
 
