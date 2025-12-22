@@ -297,27 +297,45 @@ class UserInteractive:
                     print("⚠️ 当前未登录，部分歌曲可能无法解析")
                     return None
             
+            # 注入 os=pc 保证返回正常码率，并进行编码
+            if "os=pc" not in cookie.lower():
+                cookie += "; os=pc"
             encoded_cookie = urllib.parse.quote(cookie)
-            if not bitRate:
-                bitRate = DEFAULT_BIT_RATE
-                
-            url = f"{API_BASE_URL}song/download/url?id={songID}&level=lossless&cookie={encoded_cookie}"
-            print("请求链接: ", url)
+            
+            # 根据码率映射 level 参数
+            level = "higher"
+            if bitRate:
+                if bitRate >= 999000:
+                    level = "lossless"
+                elif bitRate >= 320000:
+                    level = "exhigh"
+                elif bitRate >= 192000:
+                    level = "higher"
+                else:
+                    level = "standard"
+            
+            # 使用新版接口 /song/url/v1
+            url = f"{API_BASE_URL}song/url/v1?id={songID}&level={level}&cookie={encoded_cookie}"
+            print(f"请求链接 ({level}): ", url)
             
             response = requests.get(url)
             data = response.json()
             
-            if 'data' not in data or not data['data']:
-                print("⚠️ 请求返回数据异常")
+            # 新版接口返回的 data 是一个列表
+            if 'data' not in data or not isinstance(data['data'], list) or len(data['data']) == 0:
+                print("⚠️ 请求返回数据异常:", data)
                 return None
                 
-            downloadUrl = data['data']['url']
-            print("\n解析的下载链接为: ", downloadUrl)
+            song_info = data['data'][0]
+            downloadUrl = song_info.get('url')
             
             if not downloadUrl:
+                print(f"⚠️ 解析失败。API 响应: {data}")
                 print("⚠️ 该歌曲可能没有可用的下载链接, 或者是需要VIP才能下载")
                 return None
-                
+            
+            print(f"\n✅ 解析成功！音质等级: {song_info.get('level', level)}")
+            print("🔗 下载链接: ", downloadUrl)
             return downloadUrl
         except Exception as e:
             print(f"❌ 获取下载链接失败: {e}")
