@@ -313,8 +313,13 @@ class UserInteractive:
                 
                 url = f"{API_BASE_URL}song/url/v1"
                 print(f"📡 正在请求: {current_level} (VIP={bool(current_cookie)}, Unblock={current_unblock})")
-                resp = requests.get(url, params=params)
+                # 改用 POST 请求，防止 Cookie 过长导致 URL 超出限制 (HTTP 502)
+                resp = requests.post(url, data=params)
                 return resp.json()
+
+            # 初始化变量，防止未赋值错误
+            downloadUrl = None
+            song_info = {}
 
             # 第一次尝试：使用当前设置
             data = fetch(level, unblock, cookie)
