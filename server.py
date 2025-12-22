@@ -2,6 +2,7 @@ import json
 import sqlite3
 import os
 import secrets
+import subprocess
 import tempfile
 import threading
 import time
@@ -14,7 +15,7 @@ from typing import Any, Dict, Optional, Tuple
 import qrcode
 import requests
 from cryptography.fernet import Fernet, InvalidToken
-from fastapi import FastAPI, Header, HTTPException, Query, Response
+from fastapi import FastAPI, File, Header, HTTPException, Query, Response, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
 
 from biliurl import getCid
@@ -290,6 +291,34 @@ def _playurl_json(bvid: str, cid: str, qn: int, cookies: Optional[Dict[str, str]
     raise HTTPException(status_code=502, detail={"error": "bilibili_playurl_failed", "raw": last})
 
 
+def _playurl_dash_with_fallback(
+    bvid: str,
+    cid: str,
+    cookies: Optional[Dict[str, str]],
+    authed: bool,
+) -> Tuple[Dict[str, Any], Dict[str, Any], Optional[Dict[str, str]], bool, int]:
+    """获取 playurl(dash) 并在鉴权无效/失效时自动降级到游客 480p。
+
+    返回：(playurl_json, dash, effective_cookies, effective_authed, effective_qn)
+    """
+
+    qn = QMAX if authed else Q480
+    try:
+        j = _playurl_json(bvid=bvid, cid=cid, qn=qn, cookies=cookies)
+        dash = j["data"]["dash"]
+        return j, dash, cookies, authed, qn
+    except HTTPException as e:
+        # 如果带登录态失败，则自动降级为游客 480p
+        if authed:
+            try:
+                j2 = _playurl_json(bvid=bvid, cid=cid, qn=Q480, cookies=None)
+                dash2 = j2["data"]["dash"]
+                return j2, dash2, None, False, Q480
+            except HTTPException:
+                raise e
+        raise
+
+
 def _auth_cookies_and_qn(
     user_id: Optional[str],
     token: Optional[str],
@@ -319,6 +348,52 @@ def _stream_download(url: str, cookies: Optional[Dict[str, str]]):
 
     content_type = upstream.headers.get("Content-Type") or "application/octet-stream"
     return _iter(), content_type
+
+
+def _download_to_file(url: str, cookies: Optional[Dict[str, str]], file_path: str) -> None:
+    headers = dict(BILI_HEADERS)
+    headers["Accept-Encoding"] = "identity"
+    r = requests.get(url, headers=headers, cookies=cookies, stream=True, timeout=30)
+    r.raise_for_status()
+    with open(file_path, "wb") as f:
+        for chunk in r.iter_content(chunk_size=1024 * 256):
+            if chunk:
+                f.write(chunk)
+    r.close()
+
+
+def _ffmpeg_mux_to_mp4(video_path: str, audio_path: str, output_path: str) -> None:
+    try:
+        subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True, timeout=10)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": "ffmpeg_not_available", "message": str(e)})
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        video_path,
+        "-i",
+        audio_path,
+        "-c:v",
+        "copy",
+        "-c:a",
+        "copy",
+        "-movflags",
+        "+faststart",
+        output_path,
+    ]
+
+    p = subprocess.run(cmd, capture_output=True, text=True)
+    if p.returncode != 0:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "ffmpeg_mux_failed",
+                "returncode": p.returncode,
+                "stderr": (p.stderr or "")[-4000:],
+            },
+        )
 
 
 def _pick_video_audio(
@@ -436,6 +511,10 @@ def index():
             <div class="muted">这里使用服务端转发下载，避免直链跨域/防盗链问题</div>
             <button id="btnDlVideo">下载视频</button>
             <button id="btnDlAudio">下载音频</button>
+            <hr style="margin: 12px 0; border: 0; border-top: 1px solid #eee;" />
+            <h4 style="margin: 0 0 8px;">4) 服务端下载并合并 MP4</h4>
+            <div class="muted">服务端自动拉取 video/audio 流并用 ffmpeg 合并封装（无需先下载再上传）</div>
+            <button id="btnMergeRemote">下载并合并 MP4</button>
             <pre id="dlOut">{}</pre>
         </div>
     </div>
@@ -502,11 +581,20 @@ function download(kind){
     setJson('dlOut', {action: 'download', url});
 }
 
+function mergeRemote(){
+    const bvid = $('bvid').value.trim();
+    if(!bvid) throw new Error('请填写 bvid');
+    const url = '/merge/mp4/remote?bvid=' + encodeURIComponent(bvid) + authQuery();
+    window.location.href = url;
+    setJson('dlOut', {action: 'merge_remote_download', url});
+}
+
 $('btnQr').addEventListener('click', async ()=>{ try{ await getQr(); } catch(e){ setJson('loginOut', {error: String(e)}); } });
 $('btnPoll').addEventListener('click', async ()=>{ try{ startPoll(); } catch(e){ setJson('loginOut', {error: String(e)}); } });
 $('btnUrls').addEventListener('click', async ()=>{ try{ await getUrls(); } catch(e){ setJson('urlOut', {error: String(e)}); } });
 $('btnDlVideo').addEventListener('click', ()=>{ try{ download('video'); } catch(e){ setJson('dlOut', {error: String(e)}); } });
 $('btnDlAudio').addEventListener('click', ()=>{ try{ download('audio'); } catch(e){ setJson('dlOut', {error: String(e)}); } });
+$('btnMergeRemote').addEventListener('click', ()=>{ try{ mergeRemote(); } catch(e){ setJson('dlOut', {error: String(e)}); } });
 </script>
 </body>
 </html>"""
@@ -582,18 +670,21 @@ def download_video(
     x_token: Optional[str] = Header(default=None, alias="X-Token"),
 ):
     """服务端转发下载视频流（单独视频轨道 m4s）。"""
-    cookies, qn, authed = _auth_cookies_and_qn(user_id, token, x_user_id, x_token)
+    cookies, _qn, authed = _auth_cookies_and_qn(user_id, token, x_user_id, x_token)
     cid = getCid(bvid, cookies=cookies)
-    j = _playurl_json(bvid=bvid, cid=cid, qn=qn, cookies=cookies)
-    dash = j["data"]["dash"]
+    _j, dash, cookies_eff, authed_eff, _qn_eff = _playurl_dash_with_fallback(
+        bvid=bvid, cid=cid, cookies=cookies, authed=authed
+    )
     prefer = Q480 if not authed else None
     max_id = Q480 if not authed else None
+    prefer = Q480 if not authed_eff else None
+    max_id = Q480 if not authed_eff else None
     best_video, _best_audio = _pick_video_audio(dash, prefer_video_id=prefer, max_video_id=max_id)
     url = best_video.get("baseUrl")
     if not url:
         raise HTTPException(status_code=502, detail={"error": "no_video_url"})
 
-    iterator, content_type = _stream_download(url, cookies)
+    iterator, content_type = _stream_download(url, cookies_eff)
     filename = f"video-{bvid}-id{best_video.get('id')}.m4s"
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
     return StreamingResponse(iterator, media_type=content_type, headers=headers)
@@ -608,19 +699,173 @@ def download_audio(
     x_token: Optional[str] = Header(default=None, alias="X-Token"),
 ):
     """服务端转发下载音频流（单独音频轨道 m4s）。"""
-    cookies, qn, _authed = _auth_cookies_and_qn(user_id, token, x_user_id, x_token)
+    cookies, _qn, authed = _auth_cookies_and_qn(user_id, token, x_user_id, x_token)
     cid = getCid(bvid, cookies=cookies)
-    j = _playurl_json(bvid=bvid, cid=cid, qn=qn, cookies=cookies)
-    dash = j["data"]["dash"]
+    _j, dash, cookies_eff, _authed_eff, _qn_eff = _playurl_dash_with_fallback(
+        bvid=bvid, cid=cid, cookies=cookies, authed=authed
+    )
     _best_video, best_audio = _pick_video_audio(dash)
     url = best_audio.get("baseUrl")
     if not url:
         raise HTTPException(status_code=502, detail={"error": "no_audio_url"})
 
-    iterator, content_type = _stream_download(url, cookies)
+    iterator, content_type = _stream_download(url, cookies_eff)
     filename = f"audio-{bvid}.m4s"
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
     return StreamingResponse(iterator, media_type=content_type, headers=headers)
+
+
+@app.post("/merge/mp4")
+def merge_mp4(
+    bvid: str = Query("output"),
+    video_file: UploadFile = File(...),
+    audio_file: UploadFile = File(...),
+):
+    """上传 video.m4s + audio.m4s，在服务端用 ffmpeg 封装合并成 mp4 并返回下载。"""
+
+    tmp_dir = tempfile.mkdtemp(prefix="mux_")
+    video_path = os.path.join(tmp_dir, "video.m4s")
+    audio_path = os.path.join(tmp_dir, "audio.m4s")
+    out_path = os.path.join(tmp_dir, "merged.mp4")
+
+    try:
+        with open(video_path, "wb") as f:
+            while True:
+                chunk = video_file.file.read(1024 * 1024)
+                if not chunk:
+                    break
+                f.write(chunk)
+
+        with open(audio_path, "wb") as f:
+            while True:
+                chunk = audio_file.file.read(1024 * 1024)
+                if not chunk:
+                    break
+                f.write(chunk)
+
+        _ffmpeg_mux_to_mp4(video_path, audio_path, out_path)
+
+        def _iter_mp4():
+            try:
+                with open(out_path, "rb") as f:
+                    while True:
+                        buf = f.read(1024 * 256)
+                        if not buf:
+                            break
+                        yield buf
+            finally:
+                try:
+                    video_file.file.close()
+                except Exception:
+                    pass
+                try:
+                    audio_file.file.close()
+                except Exception:
+                    pass
+                try:
+                    for p in (video_path, audio_path, out_path):
+                        if os.path.exists(p):
+                            os.remove(p)
+                    if os.path.isdir(tmp_dir):
+                        os.rmdir(tmp_dir)
+                except Exception:
+                    pass
+
+        safe_name = "".join([c for c in bvid if c.isalnum() or c in ("-", "_", ".")]) or "output"
+        headers = {"Content-Disposition": f'attachment; filename="{safe_name}.mp4"'}
+        return StreamingResponse(_iter_mp4(), media_type="video/mp4", headers=headers)
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Cleanup on unexpected error
+        try:
+            video_file.file.close()
+        except Exception:
+            pass
+        try:
+            audio_file.file.close()
+        except Exception:
+            pass
+        try:
+            for p in (video_path, audio_path, out_path):
+                if os.path.exists(p):
+                    os.remove(p)
+            if os.path.isdir(tmp_dir):
+                os.rmdir(tmp_dir)
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail={"error": "merge_failed", "message": str(e)})
+
+
+@app.get("/merge/mp4/remote")
+def merge_mp4_remote(
+    bvid: str = Query(...),
+    user_id: Optional[str] = Query(None),
+    token: Optional[str] = Query(None),
+    x_user_id: Optional[str] = Header(default=None, alias="X-User-Id"),
+    x_token: Optional[str] = Header(default=None, alias="X-Token"),
+):
+    """服务端根据 bvid 拉取 video.m4s + audio.m4s，并用 ffmpeg 合并成 mp4 返回下载。"""
+
+    cookies, _qn, authed = _auth_cookies_and_qn(user_id, token, x_user_id, x_token)
+    cid = getCid(bvid, cookies=cookies)
+    _j, dash, cookies_eff, authed_eff, _qn_eff = _playurl_dash_with_fallback(
+        bvid=bvid, cid=cid, cookies=cookies, authed=authed
+    )
+
+    prefer = Q480 if not authed_eff else None
+    max_id = Q480 if not authed_eff else None
+    best_video, best_audio = _pick_video_audio(dash, prefer_video_id=prefer, max_video_id=max_id)
+
+    video_url = best_video.get("baseUrl")
+    audio_url = best_audio.get("baseUrl")
+    if not video_url or not audio_url:
+        raise HTTPException(status_code=502, detail={"error": "no_stream_url"})
+
+    tmp_dir = tempfile.mkdtemp(prefix="mux_remote_")
+    video_path = os.path.join(tmp_dir, "video.m4s")
+    audio_path = os.path.join(tmp_dir, "audio.m4s")
+    out_path = os.path.join(tmp_dir, "merged.mp4")
+
+    try:
+        _download_to_file(video_url, cookies_eff, video_path)
+        _download_to_file(audio_url, cookies_eff, audio_path)
+        _ffmpeg_mux_to_mp4(video_path, audio_path, out_path)
+
+        def _iter_mp4():
+            try:
+                with open(out_path, "rb") as f:
+                    while True:
+                        buf = f.read(1024 * 256)
+                        if not buf:
+                            break
+                        yield buf
+            finally:
+                try:
+                    for p in (video_path, audio_path, out_path):
+                        if os.path.exists(p):
+                            os.remove(p)
+                    if os.path.isdir(tmp_dir):
+                        os.rmdir(tmp_dir)
+                except Exception:
+                    pass
+
+        safe_name = "".join([c for c in bvid if c.isalnum() or c in ("-", "_", ".")]) or "output"
+        filename = f"merged-{safe_name}.mp4"
+        headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+        return StreamingResponse(_iter_mp4(), media_type="video/mp4", headers=headers)
+    except HTTPException:
+        raise
+    except Exception as e:
+        try:
+            for p in (video_path, audio_path, out_path):
+                if os.path.exists(p):
+                    os.remove(p)
+            if os.path.isdir(tmp_dir):
+                os.rmdir(tmp_dir)
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail={"error": "merge_remote_failed", "message": str(e)})
 
 
 @app.get("/stream/video")
@@ -638,21 +883,22 @@ def stream_video(
     user_sess = _validate_user(uid, tok)
 
     cookies = user_sess.cookie_dict if user_sess else None
-    qn = QMAX if user_sess else Q480
+    authed = bool(user_sess)
 
     cid = getCid(bvid, cookies=cookies)
-    j = _playurl_json(bvid=bvid, cid=cid, qn=qn, cookies=cookies)
-    dash = j["data"]["dash"]
+    _j, dash, _cookies_eff, authed_eff, qn_eff = _playurl_dash_with_fallback(
+        bvid=bvid, cid=cid, cookies=cookies, authed=authed
+    )
 
-    prefer = Q480 if not user_sess else None
-    max_id = Q480 if not user_sess else None
+    prefer = Q480 if not authed_eff else None
+    max_id = Q480 if not authed_eff else None
     best_video, _best_audio = _pick_video_audio(dash, prefer_video_id=prefer, max_video_id=max_id)
 
     return {
         "bvid": bvid,
         "cid": cid,
-        "auth": bool(user_sess),
-        "qn_request": qn,
+        "auth": bool(authed_eff),
+        "qn_request": qn_eff,
         "qn_selected": best_video.get("id"),
         "url": best_video.get("baseUrl"),
         "backup_url": (best_video.get("backupUrl") or []),
@@ -674,19 +920,20 @@ def stream_audio(
     user_sess = _validate_user(uid, tok)
 
     cookies = user_sess.cookie_dict if user_sess else None
-    qn = QMAX if user_sess else Q480
+    authed = bool(user_sess)
 
     cid = getCid(bvid, cookies=cookies)
-    j = _playurl_json(bvid=bvid, cid=cid, qn=qn, cookies=cookies)
-    dash = j["data"]["dash"]
+    _j, dash, _cookies_eff, authed_eff, qn_eff = _playurl_dash_with_fallback(
+        bvid=bvid, cid=cid, cookies=cookies, authed=authed
+    )
 
     _best_video, best_audio = _pick_video_audio(dash)
 
     return {
         "bvid": bvid,
         "cid": cid,
-        "auth": bool(user_sess),
-        "qn_request": qn,
+        "auth": bool(authed_eff),
+        "qn_request": qn_eff,
         "url": best_audio.get("baseUrl"),
         "backup_url": (best_audio.get("backupUrl") or []),
     }
