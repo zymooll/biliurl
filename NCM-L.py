@@ -288,55 +288,67 @@ class UserInteractive:
     """用户交互功能类"""
     
     @staticmethod
-    def getDownloadUrl(songID, bitRate=None, cookie=None):
+    def getDownloadUrl(songID, level="exhigh", unblock=False, cookie=None):
         """获取歌曲下载链接"""
         try:
             if not cookie:
                 cookie = load_cookie()
-                if not cookie:
-                    print("⚠️ 当前未登录，部分歌曲可能无法解析")
-                    return None
             
-            # 注入 os=pc 保证返回正常码率，并进行编码
-            if "os=pc" not in cookie.lower():
-                cookie += "; os=pc"
-            encoded_cookie = urllib.parse.quote(cookie)
-            
-            # 根据码率映射 level 参数
-            level = "higher"
-            if bitRate:
-                if bitRate >= 999000:
-                    level = "lossless"
-                elif bitRate >= 320000:
-                    level = "exhigh"
-                elif bitRate >= 192000:
-                    level = "higher"
-                else:
-                    level = "standard"
-            
-            # 使用新版接口 /song/url/v1
-            url = f"{API_BASE_URL}song/url/v1?id={songID}&level={level}&cookie={encoded_cookie}"
-            print(f"请求链接 ({level}): ", url)
-            
-            response = requests.get(url)
-            data = response.json()
-            
-            # 新版接口返回的 data 是一个列表
-            if 'data' not in data or not isinstance(data['data'], list) or len(data['data']) == 0:
-                print("⚠️ 请求返回数据异常:", data)
-                return None
+            def fetch(current_level, current_unblock, current_cookie):
+                params = {
+                    "id": songID,
+                    "level": current_level,
+                    "unblock": "true" if current_unblock else "false",
+                    # 尝试添加 realIP 参数，伪装成国内常见 IP (例如深圳电信)，或者你可以改为你自己的公网 IP
+                    "realIP": "116.25.146.177", 
+                }
+                if current_cookie:
+                    # 确保包含 os=pc 且格式正确
+                    c_str = current_cookie
+                    if "os=pc" not in c_str.lower():
+                        c_str += "; os=pc"
+                    params["cookie"] = c_str
                 
-            song_info = data['data'][0]
-            downloadUrl = song_info.get('url')
+                if current_unblock:
+                    params["source"] = "migu,qq"
+                
+                url = f"{API_BASE_URL}song/url/v1"
+                print(f"📡 正在请求: {current_level} (VIP={bool(current_cookie)}, Unblock={current_unblock}, realIP={params['realIP']})")
+                resp = requests.get(url, params=params)
+                return resp.json()
+
+            # 第一次尝试：使用当前设置
+            data = fetch(level, unblock, cookie)
             
+            if 'data' in data and isinstance(data['data'], list) and len(data['data']) > 0:
+                song_info = data['data'][0]
+                downloadUrl = song_info.get('url')
+                
+                # 检查是否为酷狗占位符
+                if downloadUrl and "1325645003.mp3" in downloadUrl:
+                    print("⚠️ 检测到 VIP 身份未生效或音源受限（返回了酷狗占位符）")
+                    if not unblock:
+                        print("🔄 正在尝试开启解灰模式重新获取...")
+                        data = fetch(level, True, None) # 开启解灰，且不带 Cookie 避免干扰
+                    else:
+                        print("🔄 正在尝试强制切换咪咕音源...")
+                        # 强制咪咕
+                        params_migu = {"id": songID, "level": "standard", "unblock": "true", "source": "migu"}
+                        data = requests.get(f"{API_BASE_URL}song/url/v1", params=params_migu).json()
+                
+                # 重新提取结果
+                song_info = data['data'][0]
+                downloadUrl = song_info.get('url')
+
             if not downloadUrl:
-                print(f"⚠️ 解析失败。API 响应: {data}")
-                print("⚠️ 该歌曲可能没有可用的下载链接, 或者是需要VIP才能下载")
+                print(f"❌ 解析失败。API 响应: {data}")
                 return None
             
-            print(f"\n✅ 解析成功！音质等级: {song_info.get('level', level)}")
-            print("🔗 下载链接: ", downloadUrl)
+            print(f"\n✅ 解析成功！")
+            print(f"🎵 实际音质: {song_info.get('level', '未知')}")
+            print(f"🔗 下载链接: {downloadUrl}")
             return downloadUrl
+
         except Exception as e:
             print(f"❌ 获取下载链接失败: {e}")
             return None
@@ -410,13 +422,27 @@ def mainMenu(current_cookie=None):
                     else:
                         song_id = int(song_id)
                         
-                    bitrate = input("请输入音质码率（默认320000）：").strip()
-                    if not bitrate:
-                        bitrate = DEFAULT_BIT_RATE
-                    else:
-                        bitrate = int(bitrate)
+                    print("\n可选音质等级：")
+                    print("1. standard (标准)")
+                    print("2. higher (较高)")
+                    print("3. exhigh (极高)")
+                    print("4. lossless (无损)")
+                    print("5. hires (Hi-Res)")
+                    level_choice = input("请选择音质编号（默认 3）：").strip()
+                    
+                    level_map = {
+                        "1": "standard",
+                        "2": "higher",
+                        "3": "exhigh",
+                        "4": "lossless",
+                        "5": "hires"
+                    }
+                    level = level_map.get(level_choice, "exhigh")
+
+                    unblock_choice = input("是否尝试解灰/VIP破解 (y/n，默认 n)：").strip().lower()
+                    unblock = True if unblock_choice == 'y' else False
                         
-                    UserInteractive.getDownloadUrl(song_id, bitrate, current_cookie)
+                    UserInteractive.getDownloadUrl(song_id, level, unblock, current_cookie)
                 except ValueError as e:
                     print(f"❌ 输入格式错误: {e}")
                     
