@@ -22,6 +22,14 @@ from biliurl import getCid
 
 app = FastAPI(title="biliurl http server", version="0.2.0")
 
+
+@app.on_event("startup")
+def _startup_init() -> None:
+    # Ensure directories, encryption key, and SQLite schema exist on fresh deploy
+    _ensure_dirs()
+    _ = _load_or_create_key()
+    _db_init()
+
 BILI_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
     "Referer": "https://www.bilibili.com/",
@@ -62,15 +70,30 @@ def _ensure_dirs() -> None:
     os.makedirs(COOKIES_DIR, exist_ok=True)
 
 
+def _ensure_db_dir() -> None:
+    db_dir = os.path.dirname(os.path.abspath(DB_FILE))
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
+
+
 def _db_connect() -> sqlite3.Connection:
+    _ensure_db_dir()
     conn = sqlite3.connect(DB_FILE, timeout=30, isolation_level=None, check_same_thread=False)
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA synchronous=NORMAL;")
+    # Best-effort PRAGMA; avoid crashing on filesystems that don't support WAL
+    try:
+        conn.execute("PRAGMA journal_mode=WAL;")
+    except Exception:
+        pass
+    try:
+        conn.execute("PRAGMA synchronous=NORMAL;")
+    except Exception:
+        pass
     return conn
 
 
 def _db_init() -> None:
     _ensure_dirs()
+    _ensure_db_dir()
     conn = _db_connect()
     try:
         conn.execute(
@@ -163,11 +186,25 @@ def _load_cookies_from_disk(user_id: str) -> Optional[Dict[str, str]]:
 
 
 def _cleanup_login_flows(ttl_seconds: int = 600) -> None:
+    # Fresh deploy may not have DB/tables yet
+    try:
+        _db_init()
+    except Exception:
+        # If DB init fails, don't crash request paths that call cleanup
+        return
+
     cutoff = _now() - ttl_seconds
 
     conn = _db_connect()
     try:
-        conn.execute("DELETE FROM login_flows WHERE created_at < ?", (cutoff,))
+        try:
+            conn.execute("DELETE FROM login_flows WHERE created_at < ?", (cutoff,))
+        except sqlite3.OperationalError as e:
+            # Tables might not exist yet if DB was deleted between requests
+            if "no such table" in str(e).lower():
+                _db_init()
+            else:
+                raise
     finally:
         conn.close()
 
@@ -235,7 +272,14 @@ def _validate_user(user_id: Optional[str], token: Optional[str]) -> Optional[Use
         user_key = _user_key(user_id)
         conn = _db_connect()
         try:
-            row = conn.execute("SELECT payload FROM sessions WHERE user_key = ?", (user_key,)).fetchone()
+            try:
+                row = conn.execute("SELECT payload FROM sessions WHERE user_key = ?", (user_key,)).fetchone()
+            except sqlite3.OperationalError as e:
+                if "no such table" in str(e).lower():
+                    _db_init()
+                    row = None
+                else:
+                    raise
         finally:
             conn.close()
 
@@ -608,7 +652,14 @@ def login_status(login_id: str = Query(...)):
 
     conn = _db_connect()
     try:
-        row = conn.execute("SELECT qrcode_key FROM login_flows WHERE login_id = ?", (login_id,)).fetchone()
+        try:
+            row = conn.execute("SELECT qrcode_key FROM login_flows WHERE login_id = ?", (login_id,)).fetchone()
+        except sqlite3.OperationalError as e:
+            if "no such table" in str(e).lower():
+                _db_init()
+                row = None
+            else:
+                raise
     finally:
         conn.close()
 
