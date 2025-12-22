@@ -1,9 +1,9 @@
 requests
-pyzbar 
-pillow 
-pyqrcode 
+Pillow
+qrcode
+pyzbar
+flask
 fastapi
 uvicorn
-qrcode
 cryptography
 python-multipart
