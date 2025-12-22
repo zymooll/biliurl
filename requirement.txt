@@ -2,3 +2,7 @@ requests
 pyzbar 
 pillow 
 pyqrcode 
+fastapi
+uvicorn
+qrcode
+cryptography

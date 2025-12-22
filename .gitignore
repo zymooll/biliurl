@@ -3,5 +3,22 @@ cookie-guest.json
 cookie.jsona
 .DS_Store
 cookies.pkl
-test/
 
+# Python / venv
+__pycache__/
+*.py[cod]
+.venv/
+Lib/
+Scripts/
+
+# Runtime folders
+temp/
+output/
+cookies/
+
+# Local secrets / local DB
+sessions.key
+store.db
+store.db-*
+
+test/
