@@ -37,6 +37,27 @@ class VideoGenerator:
         if platform.startswith("linux"):
             # 优先使用VAAPI（Intel核显），可通过gpu_device指定render节点
             device = gpu_device or "/dev/dri/renderD128"
+            
+            # 检查设备是否存在
+            if not os.path.exists(device):
+                print(f"⚠️ VAAPI 设备 {device} 不存在，尝试查找其他设备...")
+                # 尝试查找可用的设备
+                for i in range(128, 132):
+                    alt_device = f"/dev/dri/renderD{i}"
+                    if os.path.exists(alt_device):
+                        print(f"✅ 找到 VAAPI 设备: {alt_device}")
+                        device = alt_device
+                        break
+                else:
+                    print("⚠️ 未找到可用的 VAAPI 设备，降级使用软件编码")
+                    return {
+                        "encoder": "libx264",
+                        "encoder_args": ['-preset', 'fast', '-crf', '23'],
+                        "vf_suffix": None,
+                        "pre_args": []
+                    }
+            
+            print(f"✅ 使用 VAAPI 硬件加速: {device}")
             return {
                 "encoder": "h264_vaapi",
                 "encoder_args": ['-b:v', '4M'],
@@ -273,9 +294,15 @@ class VideoGenerator:
 
             video_codec_args = ['-c:v', encoder] + enc_conf["encoder_args"]
 
-            vf_chain = f"scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,subtitles={srt_path}:force_style='FontName=PingFang SC,FontSize=32,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,BorderStyle=1,Outline=2,Shadow=1,MarginV=50,Alignment=2'"
+            # 构建视频滤镜链
+            # 注意：subtitles 滤镜必须在 hwupload 之前（CPU端处理）
+            vf_chain = f"scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,subtitles={srt_path}:force_style='FontName=Arial,FontSize=32,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,BorderStyle=1,Outline=2,Shadow=1,MarginV=50,Alignment=2'"
             if enc_conf["vf_suffix"]:
+                # VAAPI: 字幕渲染后再上传到GPU
                 vf_chain = f"{vf_chain},{enc_conf['vf_suffix']}"
+            
+            print(f"🎨 使用编码器: {encoder}")
+            print(f"🔧 滤镜链: {vf_chain[:100]}...")  # 只打印前100字符
 
             ffmpeg_cmd = [
                 'ffmpeg',
