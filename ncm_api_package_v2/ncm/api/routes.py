@@ -1,7 +1,8 @@
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import JSONResponse, RedirectResponse, FileResponse
+from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, StreamingResponse
 import requests
 import os
+from pathlib import Path
 from ncm.core.login import LoginProtocol
 from ncm.core.music import UserInteractive
 from ncm.core.lyrics import process_lyrics_matching
@@ -348,15 +349,17 @@ async def generate_video_for_vrchat(
         if not os.path.exists(video_path):
             raise HTTPException(status_code=500, detail="视频文件生成失败")
         
-        # 不要手动设置 Content-Length，让 FileResponse 自己处理
-        # 添加 stat_result 参数确保文件大小正确计算
-        return FileResponse(
-            video_path,
+        # 使用 StreamingResponse 流式传输，避免 Content-Length 问题
+        def iterfile():
+            with open(video_path, mode="rb") as file_like:
+                yield from file_like
+        
+        return StreamingResponse(
+            iterfile(),
             media_type="video/mp4",
-            filename=f"{song_name} - {artist_name}.mp4",
             headers={
-                "Cache-Control": "public, max-age=3600",
-                "Accept-Ranges": "bytes"
+                "Content-Disposition": f'attachment; filename="{song_name} - {artist_name}.mp4"',
+                "Cache-Control": "public, max-age=3600"
             }
         )
         
