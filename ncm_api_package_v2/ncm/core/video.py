@@ -18,8 +18,21 @@ from pathlib import Path
 class VideoGenerator:
     """视频生成器"""
     
-    # 缓存目录
-    CACHE_DIR = os.path.join(tempfile.gettempdir(), "ncm_video_cache")
+    # 缓存目录 - 使用项目目录下的持久化存储
+    CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "video_cache")
+    
+    @staticmethod
+    def _get_ffmpeg_path():
+        """
+        获取 FFmpeg 可执行文件路径
+        Linux 上优先使用系统 FFmpeg（/usr/bin/ffmpeg），避免 Conda 环境的库冲突
+        """
+        if sys.platform.startswith("linux"):
+            # 优先使用系统 FFmpeg，它包含完整的硬件加速支持
+            if os.path.exists("/usr/bin/ffmpeg"):
+                return "/usr/bin/ffmpeg"
+        # 其他平台使用 PATH 中的 ffmpeg
+        return "ffmpeg"
     
     @staticmethod
     def _ensure_cache_dir():
@@ -29,9 +42,9 @@ class VideoGenerator:
     
     @staticmethod
     def _get_cache_key(song_id, level, with_lyrics=True):
-        """生成缓存key"""
-        key_str = f"{song_id}_{level}_{with_lyrics}"
-        return hashlib.md5(key_str.encode()).hexdigest()
+        """生成缓存key - 使用歌曲ID作为文件名"""
+        lyrics_suffix = "lyrics" if with_lyrics else "simple"
+        return f"{song_id}_{level}_{lyrics_suffix}"
     
     @staticmethod
     def _get_cached_video(song_id, level, with_lyrics=True):
@@ -49,15 +62,20 @@ class VideoGenerator:
     
     @staticmethod
     def _save_to_cache(video_path, song_id, level, with_lyrics=True):
-        """保存视频到缓存"""
+        """保存视频到持久化缓存"""
         try:
             VideoGenerator._ensure_cache_dir()
             cache_key = VideoGenerator._get_cache_key(song_id, level, with_lyrics)
             cache_path = os.path.join(VideoGenerator.CACHE_DIR, f"{cache_key}.mp4")
             
-            # 复制文件到缓存目录
-            shutil.copy2(video_path, cache_path)
-            print(f"💾 视频已缓存: {cache_path}")
+            # 如果源文件就在缓存目录，直接返回
+            if os.path.abspath(video_path) == os.path.abspath(cache_path):
+                print(f"💾 视频已在缓存目录: {cache_path}")
+                return cache_path
+            
+            # 移动文件到缓存目录（而不是复制，节省空间）
+            shutil.move(video_path, cache_path)
+            print(f"💾 视频已持久化存储: {cache_path}")
             return cache_path
         except Exception as e:
             print(f"⚠️ 缓存保存失败: {e}")
@@ -105,6 +123,42 @@ class VideoGenerator:
                         "vf_suffix": None,
                         "pre_args": []
                     }
+            
+            # 验证 VAAPI 是否真正可用（使用系统 ffmpeg 测试）
+            try:
+                # 使用系统 ffmpeg 测试 VAAPI 设备是否可用（避免 Conda 的库冲突）
+                ffmpeg_path = VideoGenerator._get_ffmpeg_path()
+                test_result = subprocess.run(
+                    [ffmpeg_path, '-init_hw_device', f'vaapi=va:{device}', '-f', 'lavfi', '-i', 'nullsrc', '-t', '0.001', '-f', 'null', '-'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if test_result.returncode != 0 or 'No VA display found' in test_result.stderr or 'Device creation failed' in test_result.stderr:
+                    print(f"⚠️ VAAPI 设备 {device} 不可用，降级使用软件编码")
+                    print(f"   原因: {test_result.stderr[:200] if test_result.stderr else '未知错误'}")
+                    return {
+                        "encoder": "libx264",
+                        "encoder_args": ['-preset', 'fast', '-crf', '23'],
+                        "vf_suffix": None,
+                        "pre_args": []
+                    }
+            except subprocess.TimeoutExpired:
+                print("⚠️ VAAPI 检测超时，降级使用软件编码")
+                return {
+                    "encoder": "libx264",
+                    "encoder_args": ['-preset', 'fast', '-crf', '23'],
+                    "vf_suffix": None,
+                    "pre_args": []
+                }
+            except Exception as e:
+                print(f"⚠️ VAAPI 检测失败: {e}，降级使用软件编码")
+                return {
+                    "encoder": "libx264",
+                    "encoder_args": ['-preset', 'fast', '-crf', '23'],
+                    "vf_suffix": None,
+                    "pre_args": []
+                }
             
             # 使用 VAAPI（Video Acceleration API）硬件加速
             print(f"✅ 使用 VAAPI 硬件加速: {device}")
@@ -285,7 +339,16 @@ class VideoGenerator:
             if cached_video:
                 return cached_video
         
-        # 创建临时目录
+        # 准备输出路径：直接在缓存目录中生成
+        VideoGenerator._ensure_cache_dir()
+        if song_id:
+            cache_key = VideoGenerator._get_cache_key(song_id, level, with_lyrics=True)
+            output_path = os.path.join(VideoGenerator.CACHE_DIR, f"{cache_key}.mp4")
+        else:
+            # 如果没有song_id，使用临时文件
+            output_path = os.path.join(tempfile.mkdtemp(), "output.mp4")
+        
+        # 创建临时目录用于中间文件
         temp_dir = tempfile.mkdtemp()
         
         try:
@@ -352,7 +415,6 @@ class VideoGenerator:
             
             # 6. 使用FFmpeg合成视频
             print("🎥 合成视频...")
-            output_path = os.path.join(temp_dir, "output.mp4")
             
             # FFmpeg命令：
             # - 左侧1080x1080封面
@@ -386,8 +448,9 @@ class VideoGenerator:
             # 注意：QSV 和 VAAPI 不能使用 -pix_fmt yuv420p，会导致硬件加速失效
             pix_fmt_args = [] if encoder in ["h264_qsv", "h264_vaapi"] else ['-pix_fmt', 'yuv420p']
             
+            ffmpeg_path = VideoGenerator._get_ffmpeg_path()
             ffmpeg_cmd = [
-                '/usr/bin/ffmpeg',
+                ffmpeg_path,
                 '-threads', thread_count,
             ] + enc_conf["pre_args"] + [
                 '-loop', '1',
@@ -427,14 +490,22 @@ class VideoGenerator:
             
             print(f"✅ 视频生成成功: {output_path}")
             
-            # 保存到缓存
-            if song_id:
-                output_path = VideoGenerator._save_to_cache(output_path, song_id, level, with_lyrics=True)
+            # 视频已经直接生成在缓存目录，无需移动
+            # 只需清理临时文件
+            try:
+                shutil.rmtree(temp_dir)
+            except:
+                pass
             
             return output_path
             
         except Exception as e:
             print(f"❌ 视频生成失败: {e}")
+            # 清理临时文件
+            try:
+                shutil.rmtree(temp_dir)
+            except:
+                pass
             raise e
     
     @staticmethod
@@ -451,6 +522,16 @@ class VideoGenerator:
             if cached_video:
                 return cached_video
         
+        # 准备输出路径：直接在缓存目录中生成
+        VideoGenerator._ensure_cache_dir()
+        if song_id:
+            cache_key = VideoGenerator._get_cache_key(song_id, level, with_lyrics=False)
+            output_path = os.path.join(VideoGenerator.CACHE_DIR, f"{cache_key}.mp4")
+        else:
+            # 如果没有song_id，使用临时文件
+            output_path = os.path.join(tempfile.mkdtemp(), "output.mp4")
+        
+        # 创建临时目录用于中间文件
         temp_dir = tempfile.mkdtemp()
         
         try:
@@ -481,9 +562,7 @@ class VideoGenerator:
             cover_resized = os.path.join(temp_dir, "cover_resized.jpg")
             img.save(cover_resized, quality=95)
             
-            # 生成视频
-            output_path = os.path.join(temp_dir, "output.mp4")
-            
+            # 生成视频（output_path 已在上面定义）
             enc_conf = VideoGenerator._select_encoder(use_gpu, gpu_device)
             encoder = enc_conf["encoder"]
             
@@ -504,8 +583,9 @@ class VideoGenerator:
             # QSV 和 VAAPI 不能使用 -pix_fmt yuv420p
             pix_fmt_args = [] if encoder in ["h264_qsv", "h264_vaapi"] else ['-pix_fmt', 'yuv420p']
 
+            ffmpeg_path = VideoGenerator._get_ffmpeg_path()
             ffmpeg_cmd = [
-                'ffmpeg',
+                ffmpeg_path,
                 '-threads', thread_count,
             ] + enc_conf["pre_args"] + [
                 '-loop', '1',
@@ -542,14 +622,22 @@ class VideoGenerator:
             if result.returncode != 0:
                 raise Exception(f"FFmpeg执行失败: {result.stderr}")
             
-            print(f"✅ 视频生成成功")
+            print(f"✅ 视频生成成功: {output_path}")
             
-            # 保存到缓存
-            if song_id:
-                output_path = VideoGenerator._save_to_cache(output_path, song_id, level, with_lyrics=False)
+            # 视频已经直接生成在缓存目录，无需移动
+            # 只需清理临时文件
+            try:
+                shutil.rmtree(temp_dir)
+            except:
+                pass
             
             return output_path
             
         except Exception as e:
             print(f"❌ 视频生成失败: {e}")
+            # 清理临时文件
+            try:
+                shutil.rmtree(temp_dir)
+            except:
+                pass
             raise e

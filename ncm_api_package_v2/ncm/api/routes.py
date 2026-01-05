@@ -353,14 +353,14 @@ async def generate_video_for_vrchat(
                 use_gpu=use_gpu, threads=thread_count, gpu_device=gpu_device,
                 song_id=song_id, level=level
             )
-            background_tasks.add_task(cleanup_file, video_path)
+            # 视频已持久化存储，无需清理
             return FileResponse(
                 video_path,
                 media_type="video/mp4",
                 filename=f"{song_name} - {artist_name}.mp4",
                 headers={
                     "Accept-Ranges": "bytes",
-                    "Cache-Control": "no-cache"
+                    "Cache-Control": "public, max-age=86400"  # 缓存1天
                 }
             )
         
@@ -378,14 +378,14 @@ async def generate_video_for_vrchat(
                 use_gpu=use_gpu, threads=thread_count, gpu_device=gpu_device,
                 song_id=song_id, level=level
             )
-            background_tasks.add_task(cleanup_file, video_path)
+            # 视频已持久化存储，无需清理
             return FileResponse(
                 video_path,
                 media_type="video/mp4",
                 filename=f"{song_name} - {artist_name}.mp4",
                 headers={
                     "Accept-Ranges": "bytes",
-                    "Cache-Control": "no-cache"
+                    "Cache-Control": "public, max-age=86400"  # 缓存1天
                 }
             )
         
@@ -405,14 +405,14 @@ async def generate_video_for_vrchat(
                 use_gpu=use_gpu, threads=thread_count, gpu_device=gpu_device,
                 song_id=song_id, level=level
             )
-            background_tasks.add_task(cleanup_file, video_path)
+            # 视频已持久化存储，无需清理
             return FileResponse(
                 video_path,
                 media_type="video/mp4",
                 filename=f"{song_name} - {artist_name}.mp4",
                 headers={
                     "Accept-Ranges": "bytes",
-                    "Cache-Control": "no-cache"
+                    "Cache-Control": "public, max-age=86400"  # 缓存1天
                 }
             )
         
@@ -439,9 +439,7 @@ async def generate_video_for_vrchat(
         file_size = os.path.getsize(video_path)
         print(f"📦 视频文件大小: {file_size} bytes")
         
-        # 添加后台任务清理临时文件
-        background_tasks.add_task(cleanup_file, video_path)
-        
+        # 视频已持久化存储，无需清理
         # 使用 FileResponse 直接返回文件
         return FileResponse(
             video_path,
@@ -449,7 +447,7 @@ async def generate_video_for_vrchat(
             filename=f"{song_name} - {artist_name}.mp4",
             headers={
                 "Accept-Ranges": "bytes",
-                "Cache-Control": "no-cache"
+                "Cache-Control": "public, max-age=86400"  # 缓存1天
             }
         )
         
