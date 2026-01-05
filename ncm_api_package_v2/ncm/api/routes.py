@@ -79,10 +79,16 @@ async def resolve_song(
     """6. 直链解析 (传入 id，返回直链)"""
     cookie = load_cookie()
     result = UserInteractive.getDownloadUrl(id, level, unblock, cookie)
-    if result["success"]:
-        return result
-    else:
-        return JSONResponse(status_code=400, content=result)
+    
+    # 手动构建响应并移除 Content-Length，防止 h11 协议错误 (Too much data for declared Content-Length)
+    response = JSONResponse(content=result)
+    if "content-length" in response.headers:
+        del response.headers["content-length"]
+    
+    if not result["success"]:
+        response.status_code = 400
+        
+    return response
 
 @router.get("/logout")
 async def logout():
