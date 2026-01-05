@@ -263,7 +263,6 @@ async def generate_video_for_vrchat(
 
     try:
         thread_count = threads if threads and threads > 0 else None
-            thread_count = threads if threads and threads > 0 else None
         # 1. 获取音频链接
         cookie = load_cookie()
         audio_result = UserInteractive.getDownloadUrl(song_id, level, unblock, cookie)
