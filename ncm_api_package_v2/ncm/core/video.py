@@ -388,7 +388,7 @@ class VideoGenerator:
             pix_fmt_args = [] if encoder in ["h264_qsv", "h264_vaapi"] else ['-pix_fmt', 'yuv420p']
             
             ffmpeg_cmd = [
-                'ffmpeg',
+                '/usr/bin/ffmpeg',
                 '-threads', thread_count,
             ] + enc_conf["pre_args"] + [
                 '-loop', '1',
@@ -532,6 +532,7 @@ class VideoGenerator:
                     removed_keys.append(key)
                     del env[key]
             env['LIBVA_DRIVER_NAME'] = 'iHD'
+            env['LIBVA_DRIVERS_PATH'] = '/usr/lib/x86_64-linux-gnu/dri'
             print(f"🔧 已清理环境变量: {', '.join(removed_keys) if removed_keys else '无需清理'}")
             
             # 使用 shlex.quote 正确转义每个参数，避免 shell 解析错误
