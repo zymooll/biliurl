@@ -84,7 +84,7 @@ async def get_user_info():
 @router.get("/resolve")
 async def resolve_song(
     id: int, 
-    level: str = "exhigh", 
+    level: str = "standard", 
     unblock: bool = False
 ):
     simple: bool = False,
@@ -113,7 +113,7 @@ async def logout():
 async def play_song_redirect(
     id: str = None, 
     keywords: str = None,
-    level: str = "exhigh", 
+    level: str = "standard", 
     unblock: bool = False
 ):
     """8. VRChat 播放专用 (支持 ID 或 关键词搜索)"""
@@ -223,7 +223,7 @@ async def generate_video_for_vrchat(
     background_tasks: BackgroundTasks,
     id: int = None,
     keywords: str = None,
-    level: str = "exhigh",
+    level: str = "standard",
     unblock: bool = False,
     simple: bool = False,
     use_gpu: bool = False,
