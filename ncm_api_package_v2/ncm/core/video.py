@@ -113,11 +113,10 @@ class VideoGenerator:
                 "encoder_args": [
                     '-compression_level', '2',  # 压缩级别 (0-7)
                 ],
-                "vf_suffix": "format=nv12,hwupload",
+                "vf_suffix": "format=nv12,hwupload=extra_hw_frames=64",
                 "pre_args": [
-                    '-vaapi_device', device,
-                    '-hwaccel', 'vaapi',
-                    '-hwaccel_output_format', 'vaapi'
+                    '-init_hw_device', f'vaapi=va:{device}',
+                    '-filter_hw_device', 'va'
                 ]
             }
 
