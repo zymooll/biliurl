@@ -3,6 +3,7 @@
 将音乐MP3 + 封面图片 + 歌词 合成为MP4视频，供VRChat USharpVideo使用
 """
 import os
+import shlex
 import re
 import sys
 import hashlib
@@ -416,8 +417,8 @@ class VideoGenerator:
             env['LIBVA_DRIVER_NAME'] = 'iHD'
             print(f"🔧 已清理环境变量: {', '.join(removed_keys) if removed_keys else '无需清理'}")
             
-            # 使用 shell=True 方式调用，避免 subprocess 的库加载问题
-            ffmpeg_cmd_str = ' '.join(f'"{arg}"' if ' ' in arg else arg for arg in ffmpeg_cmd)
+            # 使用 shlex.quote 正确转义每个参数，避免 shell 解析错误
+            ffmpeg_cmd_str = ' '.join(shlex.quote(str(arg)) for arg in ffmpeg_cmd)
             result = subprocess.run(ffmpeg_cmd_str, capture_output=True, text=True, env=env, shell=True)
             
             if result.returncode != 0:
@@ -533,8 +534,8 @@ class VideoGenerator:
             env['LIBVA_DRIVER_NAME'] = 'iHD'
             print(f"🔧 已清理环境变量: {', '.join(removed_keys) if removed_keys else '无需清理'}")
             
-            # 使用 shell=True 方式调用，避免 subprocess 的库加载问题
-            ffmpeg_cmd_str = ' '.join(f'"{arg}"' if ' ' in arg else arg for arg in ffmpeg_cmd)
+            # 使用 shlex.quote 正确转义每个参数，避免 shell 解析错误
+            ffmpeg_cmd_str = ' '.join(shlex.quote(str(arg)) for arg in ffmpeg_cmd)
             result = subprocess.run(ffmpeg_cmd_str, capture_output=True, text=True, env=env, shell=True)
             
             if result.returncode != 0:
