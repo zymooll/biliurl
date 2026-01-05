@@ -1,9 +1,0 @@
-name = "biliurl-workers"
-main = "src/index.ts"
-compatibility_date = "2024-01-01"
-
-# KV 命名空间用于存储 cookies 和 API 密钥信息
-[[kv_namespaces]]
-binding = "COOKIES_KV"
-id = "a657b2e5ac454f3f997b28bb7bf02e09"
-preview_id = "a657b2e5ac454f3f997b28bb7bf02e09"

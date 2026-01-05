@@ -1,0 +1,9 @@
+requests
+Pillow
+qrcode
+pyzbar
+flask
+fastapi
+uvicorn
+cryptography
+

@@ -1,0 +1,115 @@
+import requests
+import urllib.parse
+from ncm.config import API_BASE_URL
+from ncm.utils.cookie import load_cookie, filter_cookie
+
+class UserInteractive:
+    """用户交互功能类"""
+    
+    @staticmethod
+    def getDownloadUrl(songID, level="exhigh", unblock=False, cookie=None):
+        """获取歌曲下载链接"""
+        try:
+            if not cookie:
+                cookie = load_cookie()
+            
+            def fetch(current_level, current_unblock, current_cookie):
+                params = {
+                    "id": songID,
+                    "level": current_level,
+                    "unblock": "true" if current_unblock else "false",
+                }
+                if current_cookie:
+                    # 确保包含 os=pc 且格式正确
+                    c_str = current_cookie
+                    if "os=pc" not in c_str.lower():
+                        c_str += "; os=pc"
+                    params["cookie"] = c_str
+                
+                if current_unblock:
+                    params["source"] = "migu,qq"
+                
+                url = f"{API_BASE_URL}song/url/v1"
+                print(f"📡 正在请求: {current_level} (VIP={bool(current_cookie)}, Unblock={current_unblock})")
+                # 改用 POST 请求，防止 Cookie 过长导致 URL 超出限制 (HTTP 502)
+                resp = requests.post(url, data=params)
+                return resp.json()
+
+            # 初始化变量，防止未赋值错误
+            downloadUrl = None
+            song_info = {}
+
+            # 第一次尝试：使用当前设置
+            data = fetch(level, unblock, cookie)
+            
+            if 'data' in data and isinstance(data['data'], list) and len(data['data']) > 0:
+                song_info = data['data'][0]
+                downloadUrl = song_info.get('url')
+                
+                # 检查是否为酷狗占位符
+                if downloadUrl and "1325645003.mp3" in downloadUrl:
+                    print("⚠️ 检测到 VIP 身份未生效或音源受限（返回了酷狗占位符）")
+                    if not unblock:
+                        print("🔄 正在尝试开启解灰模式重新获取...")
+                        data = fetch(level, True, None) # 开启解灰，且不带 Cookie 避免干扰
+                    else:
+                        print("🔄 正在尝试强制切换咪咕音源...")
+                        # 强制咪咕
+                        params_migu = {"id": songID, "level": "standard", "unblock": "true", "source": "migu"}
+                        data = requests.get(f"{API_BASE_URL}song/url/v1", params=params_migu).json()
+                
+                # 重新提取结果
+                song_info = data['data'][0]
+                downloadUrl = song_info.get('url')
+
+            if not downloadUrl:
+                return {"success": False, "data": data}
+            
+            return {
+                "success": True,
+                "level": song_info.get('level', '未知'),
+                "url": downloadUrl,
+                "raw": song_info
+            }
+
+        except Exception as e:
+            print(f"❌ 获取下载链接失败: {e}")
+            return {"success": False, "error": str(e)}
+
+    @staticmethod
+    def getUserAccount(cookie):
+        """获取用户账号信息"""
+        try:
+            if not cookie:
+                return None
+            
+            # 使用 POST 请求避免 URL 过长，同时保留完整 Cookie
+            url = f"{API_BASE_URL}user/account"
+            # 确保包含 os=pc
+            if "os=pc" not in cookie.lower():
+                cookie += "; os=pc"
+                
+            response = requests.post(url, data={"cookie": cookie})
+            data = response.json()
+            return data
+        except Exception as e:
+            print(f"❌ 获取用户信息失败: {e}")
+            return None
+
+    @staticmethod
+    def searchSong(keywords, limit=30, offset=0, type=1):
+        """搜索歌曲"""
+        try:
+            url = f"{API_BASE_URL}cloudsearch"
+            params = {
+                "keywords": keywords,
+                "limit": limit,
+                "offset": offset,
+                "type": type
+            }
+            response = requests.get(url, params=params)
+            data = response.json()
+            return data
+        except Exception as e:
+            print(f"❌ 搜索失败: {e}")
+            return {"code": 500, "message": str(e)}
