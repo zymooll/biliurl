@@ -215,7 +215,8 @@ async def generate_video_for_vrchat(
     unblock: bool = False,
     simple: bool = False,
     use_gpu: bool = False,
-    threads: int | None = None
+    threads: int | None = None,
+    gpu_device: str | None = None
 ):
     """
     11. 生成MP4视频 (VRChat USharpVideo专用)
@@ -305,7 +306,6 @@ async def generate_video_for_vrchat(
         
         if lyric_data.get("code") != 200:
             print("⚠️ 无法获取歌词，使用简化模式")
-            video_path = VideoGenerator.generate_video_simple(audio_url, cover_url, use_gpu=use_gpu, threads=thread_count)
             video_path = VideoGenerator.generate_video_simple(audio_url, cover_url, use_gpu=use_gpu, threads=thread_count, gpu_device=gpu_device)
             return FileResponse(
                 video_path,
@@ -341,11 +341,17 @@ async def generate_video_for_vrchat(
         )
         
         # 6. 返回视频文件
+        # 确保文件完全写入并获取实际大小
+        if not os.path.exists(video_path):
+            raise HTTPException(status_code=500, detail="视频文件生成失败")
+        
+        file_size = os.path.getsize(video_path)
         return FileResponse(
             video_path,
             media_type="video/mp4",
             filename=f"{song_name} - {artist_name}.mp4",
             headers={
+                "Content-Length": str(file_size),
                 "Cache-Control": "public, max-age=3600",
                 "Accept-Ranges": "bytes"
             }
