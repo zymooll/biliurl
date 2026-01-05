@@ -8,6 +8,7 @@ import sys
 import requests
 import tempfile
 import subprocess
+import multiprocessing
 from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
 
@@ -295,13 +296,19 @@ class VideoGenerator:
             # 简化方案：直接用封面作为视频背景 + 字幕叠加
             enc_conf = VideoGenerator._select_encoder(use_gpu, gpu_device)
             encoder = enc_conf["encoder"]
-            thread_count = str(threads if threads is not None else 0)
+            
+            # 优化线程数：如果未指定则使用CPU核心数（性能更好）
+            if threads is None:
+                threads = multiprocessing.cpu_count()
+                print(f"🔢 自动检测到 {threads} 个CPU核心")
+            thread_count = str(threads)
 
             video_codec_args = ['-c:v', encoder] + enc_conf["encoder_args"]
 
             # 构建视频滤镜链
             # 注意：subtitles 滤镜必须在 hwupload 之前（CPU端处理）
-            vf_chain = f"scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,subtitles={srt_path}:force_style='FontName=Arial,FontSize=32,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,BorderStyle=1,Outline=2,Shadow=1,MarginV=50,Alignment=2'"
+            # force_style 中的逗号必须转义为 \, 否则会被FFmpeg误认为是滤镜分隔符
+            vf_chain = f"scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,subtitles={srt_path}:force_style='FontName=Arial\\,FontSize=32\\,PrimaryColour=&HFFFFFF&\\,OutlineColour=&H000000&\\,BorderStyle=1\\,Outline=2\\,Shadow=1\\,MarginV=50\\,Alignment=2'"
             if enc_conf["vf_suffix"]:
                 # VAAPI: 字幕渲染后再上传到GPU
                 vf_chain = f"{vf_chain},{enc_conf['vf_suffix']}"
@@ -379,7 +386,12 @@ class VideoGenerator:
             
             enc_conf = VideoGenerator._select_encoder(use_gpu, gpu_device)
             encoder = enc_conf["encoder"]
-            thread_count = str(threads if threads is not None else 0)
+            
+            # 优化线程数：如果未指定则使用CPU核心数（性能更好）
+            if threads is None:
+                threads = multiprocessing.cpu_count()
+                print(f"🔢 自动检测到 {threads} 个CPU核心")
+            thread_count = str(threads)
 
             video_codec_args = ['-c:v', encoder] + enc_conf["encoder_args"]
 
