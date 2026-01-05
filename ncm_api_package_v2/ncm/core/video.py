@@ -83,21 +83,21 @@ class VideoGenerator:
             }
 
         if platform.startswith("linux"):
-            # 优先使用VAAPI（Intel核显），可通过gpu_device指定render节点
+            # Intel 核显：优先使用 QSV (Quick Sync Video)，速度最快
             device = gpu_device or "/dev/dri/renderD128"
             
             # 检查设备是否存在
             if not os.path.exists(device):
-                print(f"⚠️ VAAPI 设备 {device} 不存在，尝试查找其他设备...")
+                print(f"⚠️ 设备 {device} 不存在，尝试查找其他设备...")
                 # 尝试查找可用的设备
                 for i in range(128, 132):
                     alt_device = f"/dev/dri/renderD{i}"
                     if os.path.exists(alt_device):
-                        print(f"✅ 找到 VAAPI 设备: {alt_device}")
+                        print(f"✅ 找到设备: {alt_device}")
                         device = alt_device
                         break
                 else:
-                    print("⚠️ 未找到可用的 VAAPI 设备，降级使用软件编码")
+                    print("⚠️ 未找到可用的硬件设备，降级使用软件编码")
                     return {
                         "encoder": "libx264",
                         "encoder_args": ['-preset', 'fast', '-crf', '23'],
@@ -105,17 +105,20 @@ class VideoGenerator:
                         "pre_args": []
                     }
             
-            print(f"✅ 使用 VAAPI 硬件加速: {device}")
+            # 优先尝试 QSV（Intel Quick Sync Video）
+            print(f"✅ 使用 QSV 硬件加速: {device}")
             return {
-                "encoder": "h264_vaapi",
+                "encoder": "h264_qsv",
                 "encoder_args": [
-                    '-b:v', '4M',
-                    '-maxrate', '5M',
-                    '-bufsize', '8M',
-                    '-qp', '23'  # 质量参数，类似 CRF
+                    '-preset', 'fast',      # QSV preset
+                    '-global_quality', '23', # 质量参数 (0-51, 越低越好)
+                    '-look_ahead', '1',      # 开启前瞻分析
                 ],
-                "vf_suffix": "format=nv12,hwupload",
-                "pre_args": ['-vaapi_device', device, '-init_hw_device', f'vaapi=hw:{device}', '-filter_hw_device', 'hw']
+                "vf_suffix": "hwupload=extra_hw_frames=64,format=qsv",
+                "pre_args": [
+                    '-init_hw_device', f'qsv=hw:{device}',
+                    '-filter_hw_device', 'hw'
+                ]
             }
 
         if platform.startswith("win"):
@@ -372,8 +375,8 @@ class VideoGenerator:
             print(f"🔧 滤镜链: {vf_chain[:100]}...")  # 只打印前100字符
 
             # 构建FFmpeg命令
-            # 注意：VAAPI不能使用 -pix_fmt yuv420p，会导致硬件加速失效
-            pix_fmt_args = [] if encoder == "h264_vaapi" else ['-pix_fmt', 'yuv420p']
+            # 注意：QSV 和 VAAPI 不能使用 -pix_fmt yuv420p，会导致硬件加速失效
+            pix_fmt_args = [] if encoder in ["h264_qsv", "h264_vaapi"] else ['-pix_fmt', 'yuv420p']
             
             ffmpeg_cmd = [
                 'ffmpeg',
@@ -467,8 +470,8 @@ class VideoGenerator:
             
             print(f"🎨 使用编码器: {encoder}")
             
-            # VAAPI不能使用 -pix_fmt yuv420p
-            pix_fmt_args = [] if encoder == "h264_vaapi" else ['-pix_fmt', 'yuv420p']
+            # QSV 和 VAAPI 不能使用 -pix_fmt yuv420p
+            pix_fmt_args = [] if encoder in ["h264_qsv", "h264_vaapi"] else ['-pix_fmt', 'yuv420p']
 
             ffmpeg_cmd = [
                 'ffmpeg',
