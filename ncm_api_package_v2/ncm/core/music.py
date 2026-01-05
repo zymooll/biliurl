@@ -7,7 +7,7 @@ class UserInteractive:
     """用户交互功能类"""
     
     @staticmethod
-    def getDownloadUrl(songID, level="exhigh", unblock=False, cookie=None):
+    def getDownloadUrl(songID, level="standard", unblock=False, cookie=None):
         """获取歌曲下载链接"""
         try:
             if not cookie:

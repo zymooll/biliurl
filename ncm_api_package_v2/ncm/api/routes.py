@@ -363,9 +363,10 @@ async def generate_video_for_vrchat(
         # URL 编码文件名以支持中文
         encoded_filename = quote(f"{song_name} - {artist_name}.mp4")
         
-        # 使用 Response 直接返回二进制数据，不依赖文件系统
+        # 使用 Response 直接返回二进制数据
+        # FastAPI 会自动处理 Content-Length
         from fastapi import Response
-        response = Response(
+        return Response(
             content=video_data,
             media_type="video/mp4",
             headers={
@@ -373,9 +374,6 @@ async def generate_video_for_vrchat(
                 "Cache-Control": "public, max-age=3600"
             }
         )
-        # 移除可能存在的 Content-Length，让底层自动计算正确的值
-        response.headers.pop("content-length", None)
-        return response
         
     except HTTPException:
         raise
