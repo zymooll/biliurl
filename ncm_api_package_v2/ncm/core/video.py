@@ -65,6 +65,9 @@ class VideoGenerator:
         解析LRC格式歌词
         返回: [(time_seconds, text), ...]
         """
+        if not lrc_text:
+            return []
+        
         lyrics = []
         for line in lrc_text.split('\n'):
             match = re.search(r'\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)', line)
@@ -216,8 +219,22 @@ class VideoGenerator:
             # 5. 生成SRT字幕
             srt_content = VideoGenerator.generate_lyrics_srt(lyrics_parsed, translation_parsed)
             srt_path = os.path.join(temp_dir, "lyrics.srt")
+            
+            # 检查字幕内容
+            if not srt_content or not srt_content.strip():
+                print("⚠️ 字幕内容为空，使用简化模式")
+                return VideoGenerator.generate_video_simple(audio_url, cover_url, use_gpu, threads, gpu_device)
+            
+            # 写入字幕文件
             with open(srt_path, 'w', encoding='utf-8') as f:
                 f.write(srt_content)
+            
+            # 验证文件是否成功创建
+            if not os.path.exists(srt_path) or os.path.getsize(srt_path) == 0:
+                print("⚠️ 字幕文件创建失败，使用简化模式")
+                return VideoGenerator.generate_video_simple(audio_url, cover_url, use_gpu, threads, gpu_device)
+            
+            print(f"✅ 字幕文件已生成: {srt_path} ({os.path.getsize(srt_path)} bytes)")
             
             # 6. 使用FFmpeg合成视频
             print("🎥 合成视频...")
