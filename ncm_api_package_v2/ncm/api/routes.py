@@ -344,17 +344,17 @@ async def generate_video_for_vrchat(
         )
         
         # 6. 返回视频文件
-        # 确保文件完全写入并获取实际大小
+        # 确保文件完全写入
         if not os.path.exists(video_path):
             raise HTTPException(status_code=500, detail="视频文件生成失败")
         
-        file_size = os.path.getsize(video_path)
+        # 不要手动设置 Content-Length，让 FileResponse 自己处理
+        # 添加 stat_result 参数确保文件大小正确计算
         return FileResponse(
             video_path,
             media_type="video/mp4",
             filename=f"{song_name} - {artist_name}.mp4",
             headers={
-                "Content-Length": str(file_size),
                 "Cache-Control": "public, max-age=3600",
                 "Accept-Ranges": "bytes"
             }
