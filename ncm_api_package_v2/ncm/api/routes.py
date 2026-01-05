@@ -317,8 +317,10 @@ async def generate_video_for_vrchat(
             )
         
         lyrics_data = lyric_data.get("data", {}).get("lyrics", {})
-        lrc = lyrics_data.get("lrc", {}).get("lyric")
-        tlyric = lyrics_data.get("tlyric", {}).get("lyric")
+        lrc_obj = lyrics_data.get("lrc") or {}
+        tlyric_obj = lyrics_data.get("tlyric") or {}
+        lrc = lrc_obj.get("lyric") if isinstance(lrc_obj, dict) else None
+        tlyric = tlyric_obj.get("lyric") if isinstance(tlyric_obj, dict) else None
         print(f"📝 歌词数据: lrc={'存在' if lrc else '空'} ({len(lrc) if lrc else 0} 字符), tlyric={'存在' if tlyric else '空'} ({len(tlyric) if tlyric else 0} 字符)")
         
         if not lrc:
