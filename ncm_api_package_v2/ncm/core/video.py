@@ -406,7 +406,13 @@ class VideoGenerator:
             ]
             
             print(f"🔧 执行FFmpeg命令: {' '.join(ffmpeg_cmd[:20])}...")
-            result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+            
+            # 设置环境变量，确保 FFmpeg 能找到 Intel 驱动库
+            env = os.environ.copy()
+            env['LIBVA_DRIVER_NAME'] = 'iHD'
+            env['LD_LIBRARY_PATH'] = '/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu:' + env.get('LD_LIBRARY_PATH', '')
+            
+            result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, env=env)
             
             if result.returncode != 0:
                 print(f"❌ FFmpeg错误: {result.stderr}")
@@ -511,7 +517,12 @@ class VideoGenerator:
             
             print(f"🔧 执行FFmpeg命令: {' '.join(ffmpeg_cmd[:15])}...")
             
-            result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+            # 设置环境变量，确保 FFmpeg 能找到 Intel 驱动库
+            env = os.environ.copy()
+            env['LIBVA_DRIVER_NAME'] = 'iHD'
+            env['LD_LIBRARY_PATH'] = '/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu:' + env.get('LD_LIBRARY_PATH', '')
+            
+            result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, env=env)
             
             if result.returncode != 0:
                 raise Exception(f"FFmpeg执行失败: {result.stderr}")
