@@ -63,14 +63,19 @@ class VideoGenerator:
     def parse_lrc(lrc_text):
         """
         解析LRC格式歌词
+        支持多种时间戳格式：
+        - [00:12.34] 标准格式
+        - [00:12:34] 冒号分隔
+        - [00:12.345] 3位毫秒
         返回: [(time_seconds, text), ...]
         """
         if not lrc_text:
             return []
         
         lyrics = []
-        for line in lrc_text.split('\n'):
-            match = re.search(r'\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)', line)
+        for line_num, line in enumerate(lrc_text.split('\n'), 1):
+            # 尝试匹配标准格式 [mm:ss.xxx] 或 [mm:ss:xxx]
+            match = re.search(r'\[(\d{2}):(\d{2})[\.:,](\d{2,3})\](.*)', line)
             if match:
                 m, s, ms_str, text = match.groups()
                 text = text.strip()
@@ -79,6 +84,15 @@ class VideoGenerator:
                 ms = int(ms_str.ljust(3, '0')[:3])
                 total_seconds = int(m) * 60 + int(s) + ms / 1000.0
                 lyrics.append((total_seconds, text))
+            else:
+                # 如果有时间戳但格式不匹配，输出调试信息
+                if line.strip() and line.strip().startswith('[') and ']' in line:
+                    if line_num <= 5:  # 只打印前5行示例
+                        print(f"⚠️ 第{line_num}行歌词格式不匹配: {line[:50]}")
+        
+        if not lyrics:
+            print("⚠️ 未能解析出任何有效歌词行")
+        
         return lyrics
     
     @staticmethod
@@ -214,10 +228,14 @@ class VideoGenerator:
             
             # 4. 解析歌词
             print("📝 解析歌词...")
+            print(f"原始歌词长度: {len(lyrics_lrc) if lyrics_lrc else 0} 字符")
             lyrics_parsed = VideoGenerator.parse_lrc(lyrics_lrc)
+            print(f"解析结果: {len(lyrics_parsed)} 行歌词")
             translation_parsed = None
             if translation_lrc:
+                print(f"翻译歌词长度: {len(translation_lrc)} 字符")
                 translation_parsed = VideoGenerator.parse_lrc(translation_lrc)
+                print(f"翻译解析结果: {len(translation_parsed)} 行")
             
             # 5. 生成SRT字幕
             srt_content = VideoGenerator.generate_lyrics_srt(lyrics_parsed, translation_parsed)

@@ -301,11 +301,13 @@ async def generate_video_for_vrchat(
         
         # 4. 获取歌词
         lyric_url = f"https://lyrics.0061226.xyz/api/lyric?id={song_id}"
+        print(f"🔍 请求歌词: {lyric_url}")
         lyric_response = requests.get(lyric_url, timeout=10)
         lyric_data = lyric_response.json()
+        print(f"📄 歌词API响应: code={lyric_data.get('code')}")
         
         if lyric_data.get("code") != 200:
-            print("⚠️ 无法获取歌词，使用简化模式")
+            print(f"⚠️ 无法获取歌词 (code={lyric_data.get('code')})，使用简化模式")
             video_path = VideoGenerator.generate_video_simple(audio_url, cover_url, use_gpu=use_gpu, threads=thread_count, gpu_device=gpu_device)
             return FileResponse(
                 video_path,
@@ -316,9 +318,10 @@ async def generate_video_for_vrchat(
         lyrics_data = lyric_data.get("data", {}).get("lyrics", {})
         lrc = lyrics_data.get("lrc", {}).get("lyric")
         tlyric = lyrics_data.get("tlyric", {}).get("lyric")
+        print(f"📝 歌词数据: lrc={'存在' if lrc else '空'} ({len(lrc) if lrc else 0} 字符), tlyric={'存在' if tlyric else '空'} ({len(tlyric) if tlyric else 0} 字符)")
         
         if not lrc:
-            print("⚠️ 歌词为空，使用简化模式")
+            print("⚠️ 歌词内容为空，使用简化模式")
             video_path = VideoGenerator.generate_video_simple(audio_url, cover_url, use_gpu=use_gpu, threads=thread_count, gpu_device=gpu_device)
             return FileResponse(
                 video_path,
