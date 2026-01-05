@@ -307,6 +307,15 @@ class VideoGenerator:
             # 3. 调整封面大小为正方形1080x1080
             print("🖼️ 处理封面...")
             img = Image.open(cover_path)
+            # 如果是RGBA模式，转换为RGB（JPEG不支持透明度）
+            if img.mode == 'RGBA':
+                # 创建白色背景
+                background = Image.new('RGB', img.size, (255, 255, 255))
+                background.paste(img, mask=img.split()[3])  # 使用alpha通道作为mask
+                img = background
+            elif img.mode != 'RGB':
+                img = img.convert('RGB')
+            
             img = img.resize((1080, 1080), Image.Resampling.LANCZOS)
             cover_resized = os.path.join(temp_dir, "cover_resized.jpg")
             img.save(cover_resized, quality=95)
@@ -446,6 +455,15 @@ class VideoGenerator:
             
             # 调整封面
             img = Image.open(cover_path)
+            # 如果是RGBA模式，转换为RGB（JPEG不支持透明度）
+            if img.mode == 'RGBA':
+                # 创建白色背景
+                background = Image.new('RGB', img.size, (255, 255, 255))
+                background.paste(img, mask=img.split()[3])  # 使用alpha通道作为mask
+                img = background
+            elif img.mode != 'RGB':
+                img = img.convert('RGB')
+            
             img = img.resize((1920, 1080), Image.Resampling.LANCZOS)
             cover_resized = os.path.join(temp_dir, "cover_resized.jpg")
             img.save(cover_resized, quality=95)
