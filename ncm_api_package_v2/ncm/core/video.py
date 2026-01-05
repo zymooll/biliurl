@@ -60,9 +60,14 @@ class VideoGenerator:
             print(f"✅ 使用 VAAPI 硬件加速: {device}")
             return {
                 "encoder": "h264_vaapi",
-                "encoder_args": ['-b:v', '4M'],
+                "encoder_args": [
+                    '-b:v', '4M',
+                    '-maxrate', '5M',
+                    '-bufsize', '8M',
+                    '-qp', '23'  # 质量参数，类似 CRF
+                ],
                 "vf_suffix": "format=nv12,hwupload",
-                "pre_args": ['-init_hw_device', f'vaapi=hw:{device}', '-filter_hw_device', 'hw']
+                "pre_args": ['-vaapi_device', device, '-init_hw_device', f'vaapi=hw:{device}', '-filter_hw_device', 'hw']
             }
 
         if platform.startswith("win"):
@@ -304,6 +309,10 @@ class VideoGenerator:
             print(f"🎨 使用编码器: {encoder}")
             print(f"🔧 滤镜链: {vf_chain[:100]}...")  # 只打印前100字符
 
+            # 构建FFmpeg命令
+            # 注意：VAAPI不能使用 -pix_fmt yuv420p，会导致硬件加速失效
+            pix_fmt_args = [] if encoder == "h264_vaapi" else ['-pix_fmt', 'yuv420p']
+            
             ffmpeg_cmd = [
                 'ffmpeg',
                 '-threads', thread_count,
@@ -315,14 +324,14 @@ class VideoGenerator:
             ] + video_codec_args + [
                 '-c:a', 'aac',
                 '-b:a', '192k',
-                '-pix_fmt', 'yuv420p',
+            ] + pix_fmt_args + [
                 '-shortest',
                 '-movflags', '+faststart',
                 '-y',
                 output_path
             ]
             
-            print(f"🔧 执行FFmpeg命令...")
+            print(f"🔧 执行FFmpeg命令: {' '.join(ffmpeg_cmd[:20])}...")
             result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
             
             if result.returncode != 0:
@@ -377,6 +386,11 @@ class VideoGenerator:
             vf_chain = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black"
             if enc_conf["vf_suffix"]:
                 vf_chain = f"{vf_chain},{enc_conf['vf_suffix']}"
+            
+            print(f"🎨 使用编码器: {encoder}")
+            
+            # VAAPI不能使用 -pix_fmt yuv420p
+            pix_fmt_args = [] if encoder == "h264_vaapi" else ['-pix_fmt', 'yuv420p']
 
             ffmpeg_cmd = [
                 'ffmpeg',
@@ -389,12 +403,14 @@ class VideoGenerator:
             ] + video_codec_args + [
                 '-c:a', 'aac',
                 '-b:a', '192k',
+            ] + pix_fmt_args + [
                 '-shortest',
-                '-pix_fmt', 'yuv420p',
                 '-movflags', '+faststart',
                 '-y',
                 output_path
             ]
+            
+            print(f"🔧 执行FFmpeg命令: {' '.join(ffmpeg_cmd[:15])}...")
             
             result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
             
