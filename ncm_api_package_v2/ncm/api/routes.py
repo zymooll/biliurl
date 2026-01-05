@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, Stre
 import requests
 import os
 from pathlib import Path
+from urllib.parse import quote
 from ncm.core.login import LoginProtocol
 from ncm.core.music import UserInteractive
 from ncm.core.lyrics import process_lyrics_matching
@@ -359,13 +360,16 @@ async def generate_video_for_vrchat(
         
         print(f"📦 视频文件大小: {len(video_data)} bytes")
         
+        # URL 编码文件名以支持中文
+        encoded_filename = quote(f"{song_name} - {artist_name}.mp4")
+        
         # 使用 Response 直接返回二进制数据，不依赖文件系统
         from fastapi import Response
         response = Response(
             content=video_data,
             media_type="video/mp4",
             headers={
-                "Content-Disposition": f'inline; filename="{song_name} - {artist_name}.mp4"',
+                "Content-Disposition": f"inline; filename*=UTF-8''{encoded_filename}",
                 "Cache-Control": "public, max-age=3600"
             }
         )
