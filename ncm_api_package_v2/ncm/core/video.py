@@ -88,6 +88,9 @@ class VideoGenerator:
         lyrics: [(time_seconds, text), ...]
         translation_lyrics: [(time_seconds, text), ...] 或 None
         """
+        if not lyrics or len(lyrics) == 0:
+            return ""
+        
         srt_content = []
         
         # 创建翻译映射
