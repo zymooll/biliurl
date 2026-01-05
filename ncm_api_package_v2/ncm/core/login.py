@@ -37,7 +37,23 @@ class LoginProtocol:
                 raise ValueError(f"API 返回错误状态码: {response.status_code}")
             
             response_data = response.json()
-            print(f"📦 响应数据: {response_data.keys() if isinstance(response_data, dict) else type(response_data)}")
+            print(f"📦 完整响应: {response_data}")
+
+            # 检查是否有错误码
+            if response_data.get('code') == 400:
+                print("⚠️ API 返回 400 错误，可能是端点问题")
+                print("💡 尝试使用备用方案：直接使用现有 cookie 文件")
+                # 如果有现有的 cookie 文件，直接返回
+                import json
+                if os.path.exists(GUEST_COOKIE_FILE):
+                    with open(GUEST_COOKIE_FILE, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        existing_cookie = data.get("cookie")
+                        if existing_cookie:
+                            print("✅ 使用已存在的游客 Cookie")
+                            return existing_cookie
+                
+                raise ValueError(f"游客登录失败，API 返回 code: {response_data.get('code')}, message: {response_data.get('message', '无')}")
 
             if "cookie" in response_data:
                 print("🌐 游客 Cookie 获取成功")

@@ -41,6 +41,7 @@ def initSession():
 
     cookie = load_cookie()
     if cookie:
+        print(f"📄 检测到已有 Cookie (长度: {len(cookie)})")
         try:
             data = UserInteractive.getUserAccount(cookie)
             if data and data.get("code") == 200:
@@ -52,18 +53,31 @@ def initSession():
                 print(f"✅ 当前登录身份：{nickname} (UID: {uid})")
                 return cookie
             else:
-                print("⚠️ Cookie 已失效或无法获取用户信息，将尝试使用游客身份登录")
+                print(f"⚠️ Cookie 校验返回: {data}")
+                print("⚠️ Cookie 已失效或无法获取用户信息")
         except Exception as e:
             print("❌ Cookie 校验失败：", e)
-            print("➡️ 正在尝试游客身份登录...")
+    else:
+        print("📭 未找到已保存的 Cookie 文件")
 
+    # 尝试游客登录
+    print("➡️ 正在尝试游客身份登录...")
     try:
         guest_cookie = login.guestLogin()
-        save_cookie(guest_cookie)
-        print("✅ 已使用游客身份登录")
-        return guest_cookie
+        if guest_cookie:
+            save_cookie(guest_cookie)
+            print("✅ 已使用游客身份登录")
+            return guest_cookie
+        else:
+            print("⚠️ 游客登录未返回有效 cookie")
+            return None
     except Exception as e:
-        print("❌ 游客身份登录失败：", e)
+        print(f"❌ 游客身份登录失败：{e}")
+        print("💡 提示：如果有已登录的 cookie.json，服务仍可使用该 cookie")
+        # 如果之前加载过 cookie，即使游客登录失败也返回它
+        if cookie:
+            print("✅ 将使用之前加载的 Cookie 继续运行")
+            return cookie
         return None
 
 app.include_router(router)

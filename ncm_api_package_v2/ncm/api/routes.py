@@ -16,20 +16,27 @@ def init_login_handler():
     global login_handler
     login_handler = LoginProtocol()
 
+def create_json_response(content, status_code=200):
+    """创建 JSON 响应并移除 Content-Length 头，防止协议错误"""
+    response = JSONResponse(content=content, status_code=status_code)
+    # 移除 Content-Length，让底层自动计算
+    response.headers.pop("content-length", None)
+    return response
+
 @router.get("/")
 async def root():
-    return {"message": "NCM API Service is running", "docs": "/docs"}
+    return create_json_response({"message": "NCM API Service is running", "docs": "/docs"})
 
 @router.get("/favicon.ico")
 async def favicon():
-    return JSONResponse(status_code=204, content={})
+    return JSONResponse(status_code=204, content="")
 
 @router.get("/login/qr/key")
 async def get_qr_key():
     """1. 获取扫码登录所需的 Key"""
     try:
         key = login_handler.getQRKey()
-        return {"code": 200, "unikey": key}
+        return create_json_response({"code": 200, "unikey": key})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -38,7 +45,7 @@ async def create_qr_code(key: str):
     """2. 根据 Key 生成二维码 (返回 base64)"""
     try:
         qrimg = login_handler.getQRCode(key)
-        return {"code": 200, "qrimg": qrimg}
+        return create_json_response({"code": 200, "qrimg": qrimg})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -51,7 +58,7 @@ async def check_qr_status(key: str):
             # 登录成功，保存 Cookie
             cookie = data.get("cookie")
             save_cookie(cookie)
-        return data
+        return create_json_response(data)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -60,8 +67,8 @@ async def get_current_cookie():
     """4. 查询当前保存的 Cookie"""
     cookie = load_cookie()
     if not cookie:
-        return {"code": 404, "message": "未找到已保存的 Cookie"}
-    return {"code": 200, "cookie": cookie}
+        return create_json_response({"code": 404, "message": "未找到已保存的 Cookie"}, 404)
+    return create_json_response({"code": 200, "cookie": cookie})
 
 @router.get("/user/info")
 async def get_user_info():
@@ -70,7 +77,7 @@ async def get_user_info():
     if not cookie:
         raise HTTPException(status_code=401, detail="未登录")
     data = UserInteractive.getUserAccount(cookie)
-    return data
+    return create_json_response(data)
 
 @router.get("/resolve")
 async def resolve_song(
@@ -82,29 +89,20 @@ async def resolve_song(
     cookie = load_cookie()
     result = UserInteractive.getDownloadUrl(id, level, unblock, cookie)
     
-    # 手动构建响应并移除 Content-Length，防止 h11 协议错误 (Too much data for declared Content-Length)
-    response = JSONResponse(content=result)
-    if "content-length" in response.headers:
-        del response.headers["content-length"]
-    
-    if not result["success"]:
-        response.status_code = 400
-        
-    return response
+    status_code = 200 if result["success"] else 400
+    return create_json_response(result, status_code)
 
 @router.get("/song/detail")
 async def get_song_detail(ids: str):
     """获取歌曲详情 (包含封面等信息)"""
     data = UserInteractive.getSongDetail(ids)
-    response = JSONResponse(content=data)
-    if "content-length" in response.headers:
-        del response.headers["content-length"]
-    return response
+    return create_json_response(data)
 
 @router.get("/logout")
 async def logout():
     """7. 退出登录"""
-    return login_handler.Logout()
+    result = login_handler.Logout()
+    return create_json_response(result)
 
 @router.get("/play")
 async def play_song_redirect(
@@ -190,7 +188,7 @@ async def get_lyric(id: int):
             # 2. 保存到缓存 (仅当获取成功时)
             db.save_lyrics(id, data)
                 
-        return data
+        return create_json_response(data)
     except Exception as e:
         print(f"❌ 获取歌词失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -204,7 +202,7 @@ async def search_song(
 ):
     """10. 搜索歌曲"""
     result = UserInteractive.searchSong(keywords, limit, offset, type)
-    return result
+    return create_json_response(result)
 
 @router.get("/video")
 async def generate_video_for_vrchat(
