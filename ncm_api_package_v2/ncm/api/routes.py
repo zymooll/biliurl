@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, StreamingResponse
+from fastapi import APIRouter, HTTPException, Query, Response, BackgroundTasks
+from fastapi.responses import JSONResponse, RedirectResponse, FileResponse
 import requests
 import os
 from pathlib import Path
@@ -209,8 +209,18 @@ async def search_song(
     result = UserInteractive.searchSong(keywords, limit, offset, type)
     return create_json_response(result)
 
+def cleanup_file(path: str):
+    """后台任务：清理临时文件"""
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+            print(f"🗑️ 已清理临时文件: {path}")
+    except Exception as e:
+        print(f"⚠️ 清理临时文件失败: {e}")
+
 @router.get("/video")
 async def generate_video_for_vrchat(
+    background_tasks: BackgroundTasks,
     id: int = None,
     keywords: str = None,
     level: str = "exhigh",
@@ -295,10 +305,15 @@ async def generate_video_for_vrchat(
         if simple:
             print("⚡ 使用简化模式生成视频（无字幕）")
             video_path = VideoGenerator.generate_video_simple(audio_url, cover_url, use_gpu=use_gpu, threads=thread_count, gpu_device=gpu_device)
+            background_tasks.add_task(cleanup_file, video_path)
             return FileResponse(
                 video_path,
                 media_type="video/mp4",
-                filename=f"{song_name} - {artist_name}.mp4"
+                filename=f"{song_name} - {artist_name}.mp4",
+                headers={
+                    "Accept-Ranges": "bytes",
+                    "Cache-Control": "no-cache"
+                }
             )
         
         # 4. 获取歌词
@@ -311,10 +326,15 @@ async def generate_video_for_vrchat(
         if lyric_data.get("code") != 200:
             print(f"⚠️ 无法获取歌词 (code={lyric_data.get('code')})，使用简化模式")
             video_path = VideoGenerator.generate_video_simple(audio_url, cover_url, use_gpu=use_gpu, threads=thread_count, gpu_device=gpu_device)
+            background_tasks.add_task(cleanup_file, video_path)
             return FileResponse(
                 video_path,
                 media_type="video/mp4",
-                filename=f"{song_name} - {artist_name}.mp4"
+                filename=f"{song_name} - {artist_name}.mp4",
+                headers={
+                    "Accept-Ranges": "bytes",
+                    "Cache-Control": "no-cache"
+                }
             )
         
         lyrics_data = (lyric_data.get("data") or {}).get("lyrics") or {}
@@ -329,10 +349,15 @@ async def generate_video_for_vrchat(
         if not lrc:
             print("⚠️ 歌词内容为空，使用简化模式")
             video_path = VideoGenerator.generate_video_simple(audio_url, cover_url, use_gpu=use_gpu, threads=thread_count, gpu_device=gpu_device)
+            background_tasks.add_task(cleanup_file, video_path)
             return FileResponse(
                 video_path,
                 media_type="video/mp4",
-                filename=f"{song_name} - {artist_name}.mp4"
+                filename=f"{song_name} - {artist_name}.mp4",
+                headers={
+                    "Accept-Ranges": "bytes",
+                    "Cache-Control": "no-cache"
+                }
             )
         
         # 5. 生成完整视频（带字幕）
@@ -350,28 +375,23 @@ async def generate_video_for_vrchat(
         )
         
         # 6. 返回视频文件
-        # 确保文件完全写入
         if not os.path.exists(video_path):
             raise HTTPException(status_code=500, detail="视频文件生成失败")
         
-        # 读取整个文件到内存（对于小文件），避免 Content-Length 问题
-        with open(video_path, "rb") as f:
-            video_data = f.read()
+        file_size = os.path.getsize(video_path)
+        print(f"📦 视频文件大小: {file_size} bytes")
         
-        print(f"📦 视频文件大小: {len(video_data)} bytes")
+        # 添加后台任务清理临时文件
+        background_tasks.add_task(cleanup_file, video_path)
         
-        # URL 编码文件名以支持中文
-        encoded_filename = quote(f"{song_name} - {artist_name}.mp4")
-        
-        # 使用 Response 直接返回二进制数据
-        # FastAPI 会自动处理 Content-Length
-        from fastapi import Response
-        return Response(
-            content=video_data,
+        # 使用 FileResponse 直接返回文件
+        return FileResponse(
+            video_path,
             media_type="video/mp4",
+            filename=f"{song_name} - {artist_name}.mp4",
             headers={
-                "Content-Disposition": f"inline; filename*=UTF-8''{encoded_filename}",
-                "Cache-Control": "public, max-age=3600"
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "no-cache"
             }
         )
         
