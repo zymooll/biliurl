@@ -1,0 +1,11 @@
+requests
+Pillow
+qrcode
+pyzbar
+flask
+fastapi
+uvicorn
+cryptography
+ffmpeg-python
+aiofiles
+
