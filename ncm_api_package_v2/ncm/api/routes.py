@@ -209,6 +209,50 @@ async def search_song(
     result = UserInteractive.searchSong(keywords, limit, offset, type)
     return create_json_response(result)
 
+@router.get("/video/cache/clear")
+async def clear_video_cache():
+    """11. 清理视频缓存"""
+    import shutil
+    try:
+        cache_dir = VideoGenerator.CACHE_DIR
+        if os.path.exists(cache_dir):
+            # 统计文件数量和大小
+            file_count = len([f for f in os.listdir(cache_dir) if f.endswith('.mp4')])
+            total_size = sum(os.path.getsize(os.path.join(cache_dir, f)) 
+                           for f in os.listdir(cache_dir) if f.endswith('.mp4'))
+            
+            # 删除缓存目录
+            shutil.rmtree(cache_dir)
+            os.makedirs(cache_dir, exist_ok=True)
+            
+            return {
+                "success": True,
+                "message": f"已清理 {file_count} 个缓存文件，释放 {total_size / 1024 / 1024:.2f} MB 空间"
+            }
+        return {"success": True, "message": "缓存目录不存在"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@router.get("/video/cache/info")
+async def get_cache_info():
+    """12. 获取缓存信息"""
+    try:
+        cache_dir = VideoGenerator.CACHE_DIR
+        if not os.path.exists(cache_dir):
+            return {"exists": False, "files": 0, "size_mb": 0}
+        
+        files = [f for f in os.listdir(cache_dir) if f.endswith('.mp4')]
+        total_size = sum(os.path.getsize(os.path.join(cache_dir, f)) for f in files)
+        
+        return {
+            "exists": True,
+            "path": cache_dir,
+            "files": len(files),
+            "size_mb": round(total_size / 1024 / 1024, 2)
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
 def cleanup_file(path: str):
     """后台任务：清理临时文件"""
     try:
@@ -231,7 +275,7 @@ async def generate_video_for_vrchat(
     gpu_device: str | None = None
 ):
     """
-    11. 生成MP4视频 (VRChat USharpVideo专用)
+    13. 生成MP4视频 (VRChat USharpVideo专用)
     
     参数:
         id: 歌曲ID
@@ -304,7 +348,11 @@ async def generate_video_for_vrchat(
         # 3. 如果是简化模式，直接生成无字幕视频
         if simple:
             print("⚡ 使用简化模式生成视频（无字幕）")
-            video_path = VideoGenerator.generate_video_simple(audio_url, cover_url, use_gpu=use_gpu, threads=thread_count, gpu_device=gpu_device)
+            video_path = VideoGenerator.generate_video_simple(
+                audio_url, cover_url, 
+                use_gpu=use_gpu, threads=thread_count, gpu_device=gpu_device,
+                song_id=song_id, level=level
+            )
             background_tasks.add_task(cleanup_file, video_path)
             return FileResponse(
                 video_path,
@@ -325,7 +373,11 @@ async def generate_video_for_vrchat(
         
         if lyric_data.get("code") != 200:
             print(f"⚠️ 无法获取歌词 (code={lyric_data.get('code')})，使用简化模式")
-            video_path = VideoGenerator.generate_video_simple(audio_url, cover_url, use_gpu=use_gpu, threads=thread_count, gpu_device=gpu_device)
+            video_path = VideoGenerator.generate_video_simple(
+                audio_url, cover_url, 
+                use_gpu=use_gpu, threads=thread_count, gpu_device=gpu_device,
+                song_id=song_id, level=level
+            )
             background_tasks.add_task(cleanup_file, video_path)
             return FileResponse(
                 video_path,
@@ -348,7 +400,11 @@ async def generate_video_for_vrchat(
         
         if not lrc:
             print("⚠️ 歌词内容为空，使用简化模式")
-            video_path = VideoGenerator.generate_video_simple(audio_url, cover_url, use_gpu=use_gpu, threads=thread_count, gpu_device=gpu_device)
+            video_path = VideoGenerator.generate_video_simple(
+                audio_url, cover_url, 
+                use_gpu=use_gpu, threads=thread_count, gpu_device=gpu_device,
+                song_id=song_id, level=level
+            )
             background_tasks.add_task(cleanup_file, video_path)
             return FileResponse(
                 video_path,
@@ -371,7 +427,9 @@ async def generate_video_for_vrchat(
             artist=artist_name,
             use_gpu=use_gpu,
             threads=thread_count,
-            gpu_device=gpu_device
+            gpu_device=gpu_device,
+            song_id=song_id,
+            level=level
         )
         
         # 6. 返回视频文件

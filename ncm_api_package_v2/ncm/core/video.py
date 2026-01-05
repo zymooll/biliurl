@@ -5,6 +5,8 @@
 import os
 import re
 import sys
+import hashlib
+import shutil
 import requests
 import tempfile
 import subprocess
@@ -14,6 +16,51 @@ from pathlib import Path
 
 class VideoGenerator:
     """视频生成器"""
+    
+    # 缓存目录
+    CACHE_DIR = os.path.join(tempfile.gettempdir(), "ncm_video_cache")
+    
+    @staticmethod
+    def _ensure_cache_dir():
+        """确保缓存目录存在"""
+        if not os.path.exists(VideoGenerator.CACHE_DIR):
+            os.makedirs(VideoGenerator.CACHE_DIR, exist_ok=True)
+    
+    @staticmethod
+    def _get_cache_key(song_id, level, with_lyrics=True):
+        """生成缓存key"""
+        key_str = f"{song_id}_{level}_{with_lyrics}"
+        return hashlib.md5(key_str.encode()).hexdigest()
+    
+    @staticmethod
+    def _get_cached_video(song_id, level, with_lyrics=True):
+        """获取缓存的视频"""
+        VideoGenerator._ensure_cache_dir()
+        cache_key = VideoGenerator._get_cache_key(song_id, level, with_lyrics)
+        cache_path = os.path.join(VideoGenerator.CACHE_DIR, f"{cache_key}.mp4")
+        
+        if os.path.exists(cache_path):
+            # 检查文件是否有效
+            if os.path.getsize(cache_path) > 0:
+                print(f"✅ 使用缓存视频: {cache_path}")
+                return cache_path
+        return None
+    
+    @staticmethod
+    def _save_to_cache(video_path, song_id, level, with_lyrics=True):
+        """保存视频到缓存"""
+        try:
+            VideoGenerator._ensure_cache_dir()
+            cache_key = VideoGenerator._get_cache_key(song_id, level, with_lyrics)
+            cache_path = os.path.join(VideoGenerator.CACHE_DIR, f"{cache_key}.mp4")
+            
+            # 复制文件到缓存目录
+            shutil.copy2(video_path, cache_path)
+            print(f"💾 视频已缓存: {cache_path}")
+            return cache_path
+        except Exception as e:
+            print(f"⚠️ 缓存保存失败: {e}")
+            return video_path
 
     @staticmethod
     def _select_encoder(use_gpu=False, gpu_device: str | None = None):
@@ -211,7 +258,7 @@ class VideoGenerator:
         return temp_img.name
     
     @staticmethod
-    def generate_video(audio_url, cover_url, lyrics_lrc, translation_lrc=None, song_name="未知歌曲", artist="未知歌手", use_gpu=False, threads=None, gpu_device=None):
+    def generate_video(audio_url, cover_url, lyrics_lrc, translation_lrc=None, song_name="未知歌曲", artist="未知歌手", use_gpu=False, threads=None, gpu_device=None, song_id=None, level="standard"):
         """
         生成MP4视频
         
@@ -222,11 +269,19 @@ class VideoGenerator:
             translation_lrc: LRC格式翻译歌词文本（可选）
             song_name: 歌曲名
             artist: 歌手名
+            song_id: 歌曲ID（用于缓存）
+            level: 音质等级（用于缓存）
             
         返回:
             生成的MP4文件路径
         """
         print(f"🎬 开始生成视频: {song_name} - {artist}")
+        
+        # 检查缓存
+        if song_id:
+            cached_video = VideoGenerator._get_cached_video(song_id, level, with_lyrics=True)
+            if cached_video:
+                return cached_video
         
         # 创建临时目录
         temp_dir = tempfile.mkdtemp()
@@ -346,6 +401,11 @@ class VideoGenerator:
                 raise Exception(f"FFmpeg执行失败: {result.stderr}")
             
             print(f"✅ 视频生成成功: {output_path}")
+            
+            # 保存到缓存
+            if song_id:
+                output_path = VideoGenerator._save_to_cache(output_path, song_id, level, with_lyrics=True)
+            
             return output_path
             
         except Exception as e:
@@ -353,12 +413,18 @@ class VideoGenerator:
             raise e
     
     @staticmethod
-    def generate_video_simple(audio_url, cover_url, duration_seconds=None, use_gpu=False, threads=None, gpu_device=None):
+    def generate_video_simple(audio_url, cover_url, duration_seconds=None, use_gpu=False, threads=None, gpu_device=None, song_id=None, level="standard"):
         """
         简化版视频生成（无字幕）
         快速生成一个封面+音频的MP4视频
         """
         print(f"🎬 开始生成简单视频")
+        
+        # 检查缓存
+        if song_id:
+            cached_video = VideoGenerator._get_cached_video(song_id, level, with_lyrics=False)
+            if cached_video:
+                return cached_video
         
         temp_dir = tempfile.mkdtemp()
         
@@ -430,6 +496,11 @@ class VideoGenerator:
                 raise Exception(f"FFmpeg执行失败: {result.stderr}")
             
             print(f"✅ 视频生成成功")
+            
+            # 保存到缓存
+            if song_id:
+                output_path = VideoGenerator._save_to_cache(output_path, song_id, level, with_lyrics=False)
+            
             return output_path
             
         except Exception as e:
