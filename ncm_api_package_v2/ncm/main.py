@@ -3,13 +3,36 @@ from ncm.api.routes import router, init_login_handler
 from ncm.core.login import LoginProtocol
 from ncm.core.music import UserInteractive
 from ncm.utils.cookie import load_cookie, save_cookie
+from ncm.config import API_BASE_URL
+import requests
 
 app = FastAPI(title="NCM API Service")
 
 @app.on_event("startup")
 async def startup_event():
+    # 先检查 API 连接
+    checkAPIConnection()
     init_login_handler()
     initSession()
+
+def checkAPIConnection():
+    """检查 API 服务连接"""
+    print(f"🔍 检查 API 服务连接: {API_BASE_URL}")
+    try:
+        # 尝试访问一个简单的端点
+        response = requests.get(f"{API_BASE_URL}", timeout=5)
+        print(f"✅ API 服务连接正常 (状态码: {response.status_code})")
+        return True
+    except requests.exceptions.ConnectionError as e:
+        print(f"❌ 无法连接到 API 服务: {API_BASE_URL}")
+        print(f"💡 请检查:")
+        print(f"   1. Docker 容器是否正常运行")
+        print(f"   2. 端口映射是否正确 (容器端口 -> 宿主机 3002)")
+        print(f"   3. 在宿主机执行: curl {API_BASE_URL}")
+        return False
+    except Exception as e:
+        print(f"⚠️ API 连接检查异常: {type(e).__name__}: {e}")
+        return False
 
 def initSession():
     """初始化会话，获取有效cookie"""

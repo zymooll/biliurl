@@ -1,7 +1,11 @@
 import requests
 import time
 import os
+import urllib3
 from ncm.config import API_BASE_URL, GUEST_COOKIE_FILE, COOKIE_FILE
+
+# 禁用 SSL 警告（如果使用自签名证书）
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class LoginProtocol:
     """网易云音乐登录协议实现"""
@@ -22,8 +26,18 @@ class LoginProtocol:
         """游客登录，获取临时Cookie"""
         url = f"{API_BASE_URL}register/anonimous"
         try:
-            response = self.session.get(url)
+            print(f"🔗 正在连接: {url}")
+            # 添加超时设置，明确使用 HTTP
+            response = self.session.get(url, timeout=15, verify=False, allow_redirects=True)
+            print(f"📡 响应状态码: {response.status_code}")
+            
+            if response.status_code != 200:
+                print(f"⚠️ API 返回非 200 状态码: {response.status_code}")
+                print(f"📄 响应内容: {response.text[:500]}")
+                raise ValueError(f"API 返回错误状态码: {response.status_code}")
+            
             response_data = response.json()
+            print(f"📦 响应数据: {response_data.keys() if isinstance(response_data, dict) else type(response_data)}")
 
             if "cookie" in response_data:
                 print("🌐 游客 Cookie 获取成功")
@@ -34,8 +48,12 @@ class LoginProtocol:
             else:
                 print("❌ 游客登录返回异常：", response_data)
                 raise ValueError("游客登录失败，响应中缺少 cookie 字段")
+        except requests.exceptions.RequestException as e:
+            print(f"❌ 网络请求失败: {type(e).__name__}: {e}")
+            print(f"💡 提示: 请检查 Docker 容器是否正常运行，端口映射是否正确")
+            raise
         except Exception as e:
-            print(f"❌ 游客登录请求失败: {e}")
+            print(f"❌ 游客登录请求失败: {type(e).__name__}: {e}")
             raise
     
 

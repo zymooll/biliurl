@@ -88,12 +88,22 @@ class UserInteractive:
             # 确保包含 os=pc
             if "os=pc" not in cookie.lower():
                 cookie += "; os=pc"
+            
+            print(f"🔗 正在验证 Cookie: {url}")    
+            # 添加超时和更好的错误处理
+            response = requests.post(url, data={"cookie": cookie}, timeout=15, verify=False)
+            
+            if response.status_code != 200:
+                print(f"⚠️ API 返回非 200 状态码: {response.status_code}")
+                return None
                 
-            response = requests.post(url, data={"cookie": cookie})
             data = response.json()
             return data
+        except requests.exceptions.RequestException as e:
+            print(f"❌ 获取用户信息网络错误: {type(e).__name__}: {e}")
+            return None
         except Exception as e:
-            print(f"❌ 获取用户信息失败: {e}")
+            print(f"❌ 获取用户信息失败: {type(e).__name__}: {e}")
             return None
 
     @staticmethod
