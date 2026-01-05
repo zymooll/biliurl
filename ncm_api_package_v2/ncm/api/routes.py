@@ -349,22 +349,25 @@ async def generate_video_for_vrchat(
         if not os.path.exists(video_path):
             raise HTTPException(status_code=500, detail="视频文件生成失败")
         
-        # 使用分块流式传输，明确禁用 Content-Length
-        def iterfile():
-            with open(video_path, mode="rb") as file_like:
-                while chunk := file_like.read(65536):  # 64KB 块
-                    yield chunk
+        # 读取整个文件到内存（对于小文件），避免 Content-Length 问题
+        with open(video_path, "rb") as f:
+            video_data = f.read()
         
-        # 不设置 Content-Length，使用 chunked transfer encoding
-        return StreamingResponse(
-            iterfile(),
+        print(f"📦 视频文件大小: {len(video_data)} bytes")
+        
+        # 使用 Response 直接返回二进制数据，不依赖文件系统
+        from fastapi import Response
+        response = Response(
+            content=video_data,
             media_type="video/mp4",
             headers={
                 "Content-Disposition": f'inline; filename="{song_name} - {artist_name}.mp4"',
-                "Cache-Control": "public, max-age=3600",
-                "Accept-Ranges": "bytes"
+                "Cache-Control": "public, max-age=3600"
             }
         )
+        # 移除可能存在的 Content-Length，让底层自动计算正确的值
+        response.headers.pop("content-length", None)
+        return response
         
     except HTTPException:
         raise
