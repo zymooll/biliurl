@@ -113,3 +113,19 @@ class UserInteractive:
         except Exception as e:
             print(f"❌ 搜索失败: {e}")
             return {"code": 500, "message": str(e)}
+
+    @staticmethod
+    def getSongDetail(ids):
+        """获取歌曲详情"""
+        try:
+            url = f"{API_BASE_URL}song/detail"
+            params = {
+                "ids": ids
+            }
+            response = requests.get(url, params=params)
+            data = response.json()
+            return data
+        except Exception as e:
+            print(f"❌ 获取歌曲详情失败: {e}")
+            return {"code": 500, "message": str(e)}
+

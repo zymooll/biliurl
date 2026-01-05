@@ -1,9 +1,11 @@
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, FileResponse
 import requests
+import os
 from ncm.core.login import LoginProtocol
 from ncm.core.music import UserInteractive
 from ncm.core.lyrics import process_lyrics_matching
+from ncm.core.video import VideoGenerator
 from ncm.utils.cookie import load_cookie, save_cookie
 from ncm.utils.database import db
 
@@ -88,6 +90,15 @@ async def resolve_song(
     if not result["success"]:
         response.status_code = 400
         
+    return response
+
+@router.get("/song/detail")
+async def get_song_detail(ids: str):
+    """获取歌曲详情 (包含封面等信息)"""
+    data = UserInteractive.getSongDetail(ids)
+    response = JSONResponse(content=data)
+    if "content-length" in response.headers:
+        del response.headers["content-length"]
     return response
 
 @router.get("/logout")
@@ -194,3 +205,143 @@ async def search_song(
     """10. 搜索歌曲"""
     result = UserInteractive.searchSong(keywords, limit, offset, type)
     return result
+
+@router.get("/video")
+async def generate_video_for_vrchat(
+    id: int = None,
+    keywords: str = None,
+    level: str = "exhigh",
+    unblock: bool = False,
+    simple: bool = False
+):
+    """
+    11. 生成MP4视频 (VRChat USharpVideo专用)
+    
+    参数:
+        id: 歌曲ID
+        keywords: 搜索关键词（如果没有提供id）
+        level: 音质等级 (standard/higher/exhigh/lossless)
+        unblock: 是否开启解灰模式
+        simple: 是否使用简化模式（无字幕，生成更快）
+        
+    返回:
+        MP4视频文件流
+    """
+    if not id and not keywords:
+        raise HTTPException(status_code=400, detail="必须提供 id 或 keywords 参数")
+
+    song_id = id
+
+    # 如果提供了 keywords，进行搜索
+    if keywords and not song_id:
+        print(f"🔍 收到视频搜索请求: {keywords}")
+        search_result = UserInteractive.searchSong(keywords, limit=1)
+        
+        if not search_result or search_result.get("code") != 200:
+            raise HTTPException(status_code=404, detail="搜索失败")
+            
+        songs = search_result.get("result", {}).get("songs", [])
+        if not songs:
+            raise HTTPException(status_code=404, detail="未找到相关歌曲")
+            
+        first_song = songs[0]
+        song_id = first_song.get("id")
+        song_name = first_song.get("name")
+        artist_name = first_song.get("ar", [{}])[0].get("name", "未知歌手")
+        print(f"✅ 搜索匹配: {song_name} - {artist_name} (ID: {song_id})")
+    
+    try:
+        song_id = int(song_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="无效的歌曲 ID")
+
+    try:
+        # 1. 获取音频链接
+        cookie = load_cookie()
+        audio_result = UserInteractive.getDownloadUrl(song_id, level, unblock, cookie)
+        if not audio_result["success"] or not audio_result.get("url"):
+            raise HTTPException(status_code=404, detail="无法获取歌曲链接")
+        
+        audio_url = audio_result["url"]
+        
+        # 2. 获取歌曲详情（封面）
+        song_detail = UserInteractive.getSongDetail(str(song_id))
+        if song_detail.get("code") != 200:
+            raise HTTPException(status_code=404, detail="无法获取歌曲详情")
+        
+        songs = song_detail.get("songs", [])
+        if not songs:
+            raise HTTPException(status_code=404, detail="歌曲信息为空")
+        
+        song_info = songs[0]
+        cover_url = song_info.get("al", {}).get("picUrl")
+        song_name = song_info.get("name", "未知歌曲")
+        artist_name = song_info.get("ar", [{}])[0].get("name", "未知歌手")
+        
+        if not cover_url:
+            raise HTTPException(status_code=404, detail="无法获取封面图片")
+        
+        # 3. 如果是简化模式，直接生成无字幕视频
+        if simple:
+            print("⚡ 使用简化模式生成视频（无字幕）")
+            video_path = VideoGenerator.generate_video_simple(audio_url, cover_url)
+            return FileResponse(
+                video_path,
+                media_type="video/mp4",
+                filename=f"{song_name} - {artist_name}.mp4"
+            )
+        
+        # 4. 获取歌词
+        lyric_url = f"https://lyrics.0061226.xyz/api/lyric?id={song_id}"
+        lyric_response = requests.get(lyric_url, timeout=10)
+        lyric_data = lyric_response.json()
+        
+        if lyric_data.get("code") != 200:
+            print("⚠️ 无法获取歌词，使用简化模式")
+            video_path = VideoGenerator.generate_video_simple(audio_url, cover_url)
+            return FileResponse(
+                video_path,
+                media_type="video/mp4",
+                filename=f"{song_name} - {artist_name}.mp4"
+            )
+        
+        lyrics_data = lyric_data.get("data", {}).get("lyrics", {})
+        lrc = lyrics_data.get("lrc", {}).get("lyric")
+        tlyric = lyrics_data.get("tlyric", {}).get("lyric")
+        
+        if not lrc:
+            print("⚠️ 歌词为空，使用简化模式")
+            video_path = VideoGenerator.generate_video_simple(audio_url, cover_url)
+            return FileResponse(
+                video_path,
+                media_type="video/mp4",
+                filename=f"{song_name} - {artist_name}.mp4"
+            )
+        
+        # 5. 生成完整视频（带字幕）
+        print("🎬 生成完整视频（带字幕）")
+        video_path = VideoGenerator.generate_video(
+            audio_url=audio_url,
+            cover_url=cover_url,
+            lyrics_lrc=lrc,
+            translation_lrc=tlyric,
+            song_name=song_name,
+            artist=artist_name
+        )
+        
+        # 6. 返回视频文件
+        return FileResponse(
+            video_path,
+            media_type="video/mp4",
+            filename=f"{song_name} - {artist_name}.mp4",
+            headers={
+                "Cache-Control": "public, max-age=3600",
+                "Accept-Ranges": "bytes"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ 视频生成失败: {e}")
+        raise HTTPException(status_code=500, detail=f"视频生成失败: {str(e)}")

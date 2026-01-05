@@ -6,4 +6,6 @@ flask
 fastapi
 uvicorn
 cryptography
+ffmpeg-python
+aiofiles
 
