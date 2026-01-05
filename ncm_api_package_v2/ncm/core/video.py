@@ -307,8 +307,8 @@ class VideoGenerator:
 
             # 构建视频滤镜链
             # 注意：subtitles 滤镜必须在 hwupload 之前（CPU端处理）
-            # force_style 中的逗号必须转义为 \, 否则会被FFmpeg误认为是滤镜分隔符
-            vf_chain = f"scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,subtitles={srt_path}:force_style='FontName=Arial\\,FontSize=32\\,PrimaryColour=&HFFFFFF&\\,OutlineColour=&H000000&\\,BorderStyle=1\\,Outline=2\\,Shadow=1\\,MarginV=50\\,Alignment=2'"
+            # force_style 中的逗号必须转义为 \, ，并且不要使用单引号包裹（FFmpeg解析器会混淆）
+            vf_chain = f"scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,subtitles={srt_path}:force_style=FontName=Arial\\,FontSize=32\\,PrimaryColour=&HFFFFFF&\\,OutlineColour=&H000000&\\,BorderStyle=1\\,Outline=2\\,Shadow=1\\,MarginV=50\\,Alignment=2"
             if enc_conf["vf_suffix"]:
                 # VAAPI: 字幕渲染后再上传到GPU
                 vf_chain = f"{vf_chain},{enc_conf['vf_suffix']}"
