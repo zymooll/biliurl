@@ -85,7 +85,10 @@ async def resolve_song(
     level: str = "exhigh", 
     unblock: bool = False
 ):
-    """6. 直链解析 (传入 id，返回直链)"""
+    simple: bool = False,
+    use_gpu: bool = False,
+    threads: int | None = None,
+    gpu_device: str | None = None
     cookie = load_cookie()
     result = UserInteractive.getDownloadUrl(id, level, unblock, cookie)
     
@@ -210,7 +213,9 @@ async def generate_video_for_vrchat(
     keywords: str = None,
     level: str = "exhigh",
     unblock: bool = False,
-    simple: bool = False
+    simple: bool = False,
+    use_gpu: bool = False,
+    threads: int | None = None
 ):
     """
     11. 生成MP4视频 (VRChat USharpVideo专用)
@@ -221,6 +226,9 @@ async def generate_video_for_vrchat(
         level: 音质等级 (standard/higher/exhigh/lossless)
         unblock: 是否开启解灰模式
         simple: 是否使用简化模式（无字幕，生成更快）
+        use_gpu: 是否尝试使用硬件编码 (macOS=videotoolbox, Linux默认vaapi，Win=nvenc)
+        threads: 手动指定FFmpeg线程数，留空让FFmpeg自行分配
+        gpu_device: Linux VAAPI 设备路径，例如 /dev/dri/renderD128
         
     返回:
         MP4视频文件流
@@ -254,6 +262,8 @@ async def generate_video_for_vrchat(
         raise HTTPException(status_code=400, detail="无效的歌曲 ID")
 
     try:
+        thread_count = threads if threads and threads > 0 else None
+            thread_count = threads if threads and threads > 0 else None
         # 1. 获取音频链接
         cookie = load_cookie()
         audio_result = UserInteractive.getDownloadUrl(song_id, level, unblock, cookie)
@@ -282,7 +292,7 @@ async def generate_video_for_vrchat(
         # 3. 如果是简化模式，直接生成无字幕视频
         if simple:
             print("⚡ 使用简化模式生成视频（无字幕）")
-            video_path = VideoGenerator.generate_video_simple(audio_url, cover_url)
+            video_path = VideoGenerator.generate_video_simple(audio_url, cover_url, use_gpu=use_gpu, threads=thread_count, gpu_device=gpu_device)
             return FileResponse(
                 video_path,
                 media_type="video/mp4",
@@ -296,7 +306,8 @@ async def generate_video_for_vrchat(
         
         if lyric_data.get("code") != 200:
             print("⚠️ 无法获取歌词，使用简化模式")
-            video_path = VideoGenerator.generate_video_simple(audio_url, cover_url)
+            video_path = VideoGenerator.generate_video_simple(audio_url, cover_url, use_gpu=use_gpu, threads=thread_count)
+            video_path = VideoGenerator.generate_video_simple(audio_url, cover_url, use_gpu=use_gpu, threads=thread_count, gpu_device=gpu_device)
             return FileResponse(
                 video_path,
                 media_type="video/mp4",
@@ -309,7 +320,7 @@ async def generate_video_for_vrchat(
         
         if not lrc:
             print("⚠️ 歌词为空，使用简化模式")
-            video_path = VideoGenerator.generate_video_simple(audio_url, cover_url)
+            video_path = VideoGenerator.generate_video_simple(audio_url, cover_url, use_gpu=use_gpu, threads=thread_count, gpu_device=gpu_device)
             return FileResponse(
                 video_path,
                 media_type="video/mp4",
@@ -324,7 +335,10 @@ async def generate_video_for_vrchat(
             lyrics_lrc=lrc,
             translation_lrc=tlyric,
             song_name=song_name,
-            artist=artist_name
+            artist=artist_name,
+            use_gpu=use_gpu,
+            threads=thread_count,
+            gpu_device=gpu_device
         )
         
         # 6. 返回视频文件

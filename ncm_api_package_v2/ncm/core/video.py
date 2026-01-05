@@ -4,6 +4,7 @@
 """
 import os
 import re
+import sys
 import requests
 import tempfile
 import subprocess
@@ -12,6 +13,51 @@ from pathlib import Path
 
 class VideoGenerator:
     """视频生成器"""
+
+    @staticmethod
+    def _select_encoder(use_gpu=False, gpu_device: str | None = None):
+        """选择编码器和附加参数，按需启用硬件加速"""
+        if not use_gpu:
+            return {
+                "encoder": "libx264",
+                "encoder_args": ['-preset', 'fast', '-crf', '23'],
+                "vf_suffix": None,
+                "pre_args": []
+            }
+
+        platform = sys.platform
+        if platform == "darwin":
+            return {
+                "encoder": "h264_videotoolbox",
+                "encoder_args": ['-b:v', '4M'],
+                "vf_suffix": None,
+                "pre_args": []
+            }
+
+        if platform.startswith("linux"):
+            # 优先使用VAAPI（Intel核显），可通过gpu_device指定render节点
+            device = gpu_device or "/dev/dri/renderD128"
+            return {
+                "encoder": "h264_vaapi",
+                "encoder_args": ['-b:v', '4M'],
+                "vf_suffix": "format=nv12,hwupload",
+                "pre_args": ['-init_hw_device', f'vaapi=hw:{device}', '-filter_hw_device', 'hw']
+            }
+
+        if platform.startswith("win"):
+            return {
+                "encoder": "h264_nvenc",
+                "encoder_args": ['-b:v', '4M'],
+                "vf_suffix": None,
+                "pre_args": []
+            }
+
+        return {
+            "encoder": "libx264",
+            "encoder_args": ['-preset', 'fast', '-crf', '23'],
+            "vf_suffix": None,
+            "pre_args": []
+        }
     
     @staticmethod
     def parse_lrc(lrc_text):
@@ -118,7 +164,7 @@ class VideoGenerator:
         return temp_img.name
     
     @staticmethod
-    def generate_video(audio_url, cover_url, lyrics_lrc, translation_lrc=None, song_name="未知歌曲", artist="未知歌手"):
+    def generate_video(audio_url, cover_url, lyrics_lrc, translation_lrc=None, song_name="未知歌曲", artist="未知歌手", use_gpu=False, threads=None, gpu_device=None):
         """
         生成MP4视频
         
@@ -183,19 +229,31 @@ class VideoGenerator:
             # - 总分辨率2040x1080
             
             # 简化方案：直接用封面作为视频背景 + 字幕叠加
+            enc_conf = VideoGenerator._select_encoder(use_gpu, gpu_device)
+            encoder = enc_conf["encoder"]
+            thread_count = str(threads if threads is not None else 0)
+
+            video_codec_args = ['-c:v', encoder] + enc_conf["encoder_args"]
+
+            vf_chain = f"scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,subtitles={srt_path}:force_style='FontName=PingFang SC,FontSize=32,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,BorderStyle=1,Outline=2,Shadow=1,MarginV=50,Alignment=2'"
+            if enc_conf["vf_suffix"]:
+                vf_chain = f"{vf_chain},{enc_conf['vf_suffix']}"
+
             ffmpeg_cmd = [
                 'ffmpeg',
+                '-threads', thread_count,
+            ] + enc_conf["pre_args"] + [
                 '-loop', '1',
-                '-i', cover_resized,       # 封面图片
-                '-i', audio_path,          # 音频
-                '-vf', f"scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,subtitles={srt_path}:force_style='FontName=PingFang SC,FontSize=32,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,BorderStyle=1,Outline=2,Shadow=1,MarginV=50,Alignment=2'",
-                '-c:v', 'libx264',
-                '-preset', 'fast',
-                '-crf', '23',
+                '-i', cover_resized,
+                '-i', audio_path,
+                '-vf', vf_chain,
+            ] + video_codec_args + [
                 '-c:a', 'aac',
                 '-b:a', '192k',
-                '-shortest',               # 以音频长度为准
-                '-y',                      # 覆盖输出文件
+                '-pix_fmt', 'yuv420p',
+                '-shortest',
+                '-movflags', '+faststart',
+                '-y',
                 output_path
             ]
             
@@ -214,7 +272,7 @@ class VideoGenerator:
             raise e
     
     @staticmethod
-    def generate_video_simple(audio_url, cover_url, duration_seconds=None):
+    def generate_video_simple(audio_url, cover_url, duration_seconds=None, use_gpu=False, threads=None, gpu_device=None):
         """
         简化版视频生成（无字幕）
         快速生成一个封面+音频的MP4视频
@@ -245,19 +303,30 @@ class VideoGenerator:
             # 生成视频
             output_path = os.path.join(temp_dir, "output.mp4")
             
+            enc_conf = VideoGenerator._select_encoder(use_gpu, gpu_device)
+            encoder = enc_conf["encoder"]
+            thread_count = str(threads if threads is not None else 0)
+
+            video_codec_args = ['-c:v', encoder] + enc_conf["encoder_args"]
+
+            vf_chain = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black"
+            if enc_conf["vf_suffix"]:
+                vf_chain = f"{vf_chain},{enc_conf['vf_suffix']}"
+
             ffmpeg_cmd = [
                 'ffmpeg',
+                '-threads', thread_count,
+            ] + enc_conf["pre_args"] + [
                 '-loop', '1',
                 '-i', cover_resized,
                 '-i', audio_path,
-                '-c:v', 'libx264',
-                '-preset', 'fast',
-                '-tune', 'stillimage',
-                '-crf', '23',
+                '-vf', vf_chain,
+            ] + video_codec_args + [
                 '-c:a', 'aac',
                 '-b:a', '192k',
                 '-shortest',
-                '-pix_fmt', 'yuv420p',  # 确保兼容性
+                '-pix_fmt', 'yuv420p',
+                '-movflags', '+faststart',
                 '-y',
                 output_path
             ]
