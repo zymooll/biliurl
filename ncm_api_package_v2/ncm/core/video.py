@@ -83,7 +83,7 @@ class VideoGenerator:
             }
 
         if platform.startswith("linux"):
-            # Intel 核显：优先使用 QSV (Quick Sync Video)，速度最快
+            # Intel 核显：优先使用 VAAPI (Video Acceleration API)，兼容性更好
             device = gpu_device or "/dev/dri/renderD128"
             
             # 检查设备是否存在
@@ -105,19 +105,18 @@ class VideoGenerator:
                         "pre_args": []
                     }
             
-            # 优先尝试 QSV（Intel Quick Sync Video）
-            print(f"✅ 使用 QSV 硬件加速: {device}")
+            # 使用 VAAPI（Video Acceleration API）硬件加速
+            print(f"✅ 使用 VAAPI 硬件加速: {device}")
             return {
-                "encoder": "h264_qsv",
+                "encoder": "h264_vaapi",
                 "encoder_args": [
-                    '-preset', 'fast',      # QSV preset
-                    '-global_quality', '23', # 质量参数 (0-51, 越低越好)
-                    '-look_ahead', '1',      # 开启前瞻分析
+                    '-compression_level', '2',  # 压缩级别 (0-7)
                 ],
-                "vf_suffix": "hwupload=extra_hw_frames=64,format=qsv",
+                "vf_suffix": "format=nv12,hwupload",
                 "pre_args": [
-                    '-init_hw_device', f'qsv=hw:{device}',
-                    '-filter_hw_device', 'hw'
+                    '-vaapi_device', device,
+                    '-hwaccel', 'vaapi',
+                    '-hwaccel_output_format', 'vaapi'
                 ]
             }
 
@@ -407,12 +406,19 @@ class VideoGenerator:
             
             print(f"🔧 执行FFmpeg命令: {' '.join(ffmpeg_cmd[:20])}...")
             
-            # 设置环境变量，确保 FFmpeg 能找到 Intel 驱动库
+            # 清理 Conda 环境变量，避免库链接冲突
             env = os.environ.copy()
+            removed_keys = []
+            for key in list(env.keys()):
+                if 'CONDA' in key or 'LD_PRELOAD' in key:
+                    removed_keys.append(key)
+                    del env[key]
             env['LIBVA_DRIVER_NAME'] = 'iHD'
-            env['LD_LIBRARY_PATH'] = '/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu:' + env.get('LD_LIBRARY_PATH', '')
+            print(f"🔧 已清理环境变量: {', '.join(removed_keys) if removed_keys else '无需清理'}")
             
-            result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, env=env)
+            # 使用 shell=True 方式调用，避免 subprocess 的库加载问题
+            ffmpeg_cmd_str = ' '.join(f'"{arg}"' if ' ' in arg else arg for arg in ffmpeg_cmd)
+            result = subprocess.run(ffmpeg_cmd_str, capture_output=True, text=True, env=env, shell=True)
             
             if result.returncode != 0:
                 print(f"❌ FFmpeg错误: {result.stderr}")
@@ -517,12 +523,19 @@ class VideoGenerator:
             
             print(f"🔧 执行FFmpeg命令: {' '.join(ffmpeg_cmd[:15])}...")
             
-            # 设置环境变量，确保 FFmpeg 能找到 Intel 驱动库
+            # 清理 Conda 环境变量，避免库链接冲突
             env = os.environ.copy()
+            removed_keys = []
+            for key in list(env.keys()):
+                if 'CONDA' in key or 'LD_PRELOAD' in key:
+                    removed_keys.append(key)
+                    del env[key]
             env['LIBVA_DRIVER_NAME'] = 'iHD'
-            env['LD_LIBRARY_PATH'] = '/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu:' + env.get('LD_LIBRARY_PATH', '')
+            print(f"🔧 已清理环境变量: {', '.join(removed_keys) if removed_keys else '无需清理'}")
             
-            result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, env=env)
+            # 使用 shell=True 方式调用，避免 subprocess 的库加载问题
+            ffmpeg_cmd_str = ' '.join(f'"{arg}"' if ' ' in arg else arg for arg in ffmpeg_cmd)
+            result = subprocess.run(ffmpeg_cmd_str, capture_output=True, text=True, env=env, shell=True)
             
             if result.returncode != 0:
                 raise Exception(f"FFmpeg执行失败: {result.stderr}")
