@@ -48,16 +48,29 @@ class VideoGenerator:
     
     @staticmethod
     def _get_cached_video(song_id, level, with_lyrics=True):
-        """获取缓存的视频"""
+        """获取缓存的视频（排除正在生成的.tmp文件）"""
         VideoGenerator._ensure_cache_dir()
         cache_key = VideoGenerator._get_cache_key(song_id, level, with_lyrics)
         cache_path = os.path.join(VideoGenerator.CACHE_DIR, f"{cache_key}.mp4")
+        tmp_path = f"{cache_path}.tmp"
+        
+        # 如果临时文件存在，说明正在生成，不使用缓存
+        if os.path.exists(tmp_path):
+            print(f"⏳ 视频正在生成中: {cache_key}")
+            return None
         
         if os.path.exists(cache_path):
-            # 检查文件是否有效
-            if os.path.getsize(cache_path) > 0:
-                print(f"✅ 使用缓存视频: {cache_path}")
+            # 检查文件是否有效（至少1MB）
+            file_size = os.path.getsize(cache_path)
+            if file_size > 1024 * 1024:
+                print(f"✅ 使用缓存视频: {cache_path} ({file_size / 1024 / 1024:.2f} MB)")
                 return cache_path
+            else:
+                print(f"⚠️ 缓存文件异常（{file_size} bytes），将重新生成")
+                try:
+                    os.remove(cache_path)
+                except:
+                    pass
         return None
     
     @staticmethod
@@ -331,7 +344,7 @@ class VideoGenerator:
         返回:
             生成的MP4文件路径
         """
-        print(f"🎬 开始生成视频: {song_name} - {artist}")
+        print(f"🎬 开始生成视频: {song_name} - {artist} (ID: {song_id})")
         
         # 检查缓存
         if song_id:
@@ -339,13 +352,16 @@ class VideoGenerator:
             if cached_video:
                 return cached_video
         
-        # 准备输出路径：直接在缓存目录中生成
+        # 准备输出路径：使用 .tmp 后缀，完成后重命名（原子操作）
         VideoGenerator._ensure_cache_dir()
         if song_id:
             cache_key = VideoGenerator._get_cache_key(song_id, level, with_lyrics=True)
-            output_path = os.path.join(VideoGenerator.CACHE_DIR, f"{cache_key}.mp4")
+            final_path = os.path.join(VideoGenerator.CACHE_DIR, f"{cache_key}.mp4")
+            output_path = f"{final_path}.tmp"  # 使用.tmp后缀
+            print(f"📝 缓存文件名: {cache_key}.mp4")
         else:
             # 如果没有song_id，使用临时文件
+            final_path = None
             output_path = os.path.join(tempfile.mkdtemp(), "output.mp4")
         
         # 创建临时目录用于中间文件
@@ -490,8 +506,16 @@ class VideoGenerator:
             
             print(f"✅ 视频生成成功: {output_path}")
             
-            # 视频已经直接生成在缓存目录，无需移动
-            # 只需清理临时文件
+            # 原子性重命名：.tmp -> .mp4（确保并发安全）
+            if song_id and final_path:
+                try:
+                    os.rename(output_path, final_path)
+                    print(f"💾 视频已持久化存储: {final_path}")
+                    output_path = final_path
+                except Exception as e:
+                    print(f"⚠️ 重命名失败: {e}")
+            
+            # 清理临时文件
             try:
                 shutil.rmtree(temp_dir)
             except:
@@ -501,11 +525,17 @@ class VideoGenerator:
             
         except Exception as e:
             print(f"❌ 视频生成失败: {e}")
-            # 清理临时文件
+            # 清理临时文件和.tmp文件
             try:
                 shutil.rmtree(temp_dir)
             except:
                 pass
+            if song_id and os.path.exists(output_path):
+                try:
+                    os.remove(output_path)  # 删除未完成的.tmp文件
+                    print(f"🗑️ 已清理未完成的临时文件")
+                except:
+                    pass
             raise e
     
     @staticmethod
@@ -514,7 +544,7 @@ class VideoGenerator:
         简化版视频生成（无字幕）
         快速生成一个封面+音频的MP4视频
         """
-        print(f"🎬 开始生成简单视频")
+        print(f"🎬 开始生成简单视频 (ID: {song_id})")
         
         # 检查缓存
         if song_id:
@@ -522,13 +552,16 @@ class VideoGenerator:
             if cached_video:
                 return cached_video
         
-        # 准备输出路径：直接在缓存目录中生成
+        # 准备输出路径：使用 .tmp 后缀，完成后重命名（原子操作）
         VideoGenerator._ensure_cache_dir()
         if song_id:
             cache_key = VideoGenerator._get_cache_key(song_id, level, with_lyrics=False)
-            output_path = os.path.join(VideoGenerator.CACHE_DIR, f"{cache_key}.mp4")
+            final_path = os.path.join(VideoGenerator.CACHE_DIR, f"{cache_key}.mp4")
+            output_path = f"{final_path}.tmp"  # 使用.tmp后缀
+            print(f"📝 缓存文件名: {cache_key}.mp4")
         else:
             # 如果没有song_id，使用临时文件
+            final_path = None
             output_path = os.path.join(tempfile.mkdtemp(), "output.mp4")
         
         # 创建临时目录用于中间文件
@@ -624,8 +657,16 @@ class VideoGenerator:
             
             print(f"✅ 视频生成成功: {output_path}")
             
-            # 视频已经直接生成在缓存目录，无需移动
-            # 只需清理临时文件
+            # 原子性重命名：.tmp -> .mp4（确保并发安全）
+            if song_id and final_path:
+                try:
+                    os.rename(output_path, final_path)
+                    print(f"💾 视频已持久化存储: {final_path}")
+                    output_path = final_path
+                except Exception as e:
+                    print(f"⚠️ 重命名失败: {e}")
+            
+            # 清理临时文件
             try:
                 shutil.rmtree(temp_dir)
             except:
@@ -635,9 +676,15 @@ class VideoGenerator:
             
         except Exception as e:
             print(f"❌ 视频生成失败: {e}")
-            # 清理临时文件
+            # 清理临时文件和.tmp文件
             try:
                 shutil.rmtree(temp_dir)
             except:
                 pass
+            if song_id and os.path.exists(output_path):
+                try:
+                    os.remove(output_path)  # 删除未完成的.tmp文件
+                    print(f"🗑️ 已清理未完成的临时文件")
+                except:
+                    pass
             raise e
