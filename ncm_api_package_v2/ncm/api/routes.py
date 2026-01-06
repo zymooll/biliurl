@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Query, Response, BackgroundTasks
-from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, HTMLResponse
+from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, HTMLResponse, StreamingResponse
 import requests
 import os
 import time
@@ -311,6 +311,109 @@ async def play_song_direct(
             "message": "无法获取歌曲链接",
             "song_id": song_id
         }, 404)
+
+@router.get("/stream")
+async def stream_audio_proxy(
+    id: str = None,
+    keywords: str = None,
+    level: str = "standard",
+    unblock: bool = False
+):
+    """
+    音频流代理端点 - 专为 VRChat 设计
+    
+    解决 VRChat 无法访问某些音频域名的问题
+    通过服务器流式传输音频数据
+    
+    使用方式:
+        http://206601.xyz:7997/stream?id=歌曲ID
+        http://206601.xyz:7997/stream?keywords=歌曲名
+    """
+    if not id and not keywords:
+        raise HTTPException(status_code=400, detail="必须提供 id 或 keywords 参数")
+
+    song_id = id
+
+    # 关键词搜索
+    if keywords and (not song_id or not song_id.isdigit()):
+        print(f"🔍 [Stream] 收到搜索请求: {keywords}")
+        search_result = UserInteractive.searchSong(keywords, limit=1)
+        
+        if not search_result or search_result.get("code") != 200:
+            raise HTTPException(status_code=404, detail="搜索失败")
+            
+        songs = search_result.get("result", {}).get("songs", [])
+        if not songs:
+            raise HTTPException(status_code=404, detail="未找到相关歌曲")
+            
+        first_song = songs[0]
+        song_id = first_song.get("id")
+        song_name = first_song.get("name")
+        artist_name = first_song.get("ar", [{}])[0].get("name", "未知歌手")
+        print(f"✅ [Stream] 搜索匹配: {song_name} - {artist_name} (ID: {song_id})")
+    
+    # 确保 song_id 是整数
+    try:
+        song_id = int(song_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="无效的歌曲 ID")
+
+    # 获取真实的音频 URL
+    cookie = load_cookie()
+    result = UserInteractive.getDownloadUrl(song_id, level, unblock, cookie)
+    
+    if not result["success"] or not result.get("url"):
+        raise HTTPException(status_code=404, detail="无法获取歌曲链接")
+    
+    real_audio_url = result["url"]
+    print(f"🎵 [Stream Proxy] 开始代理音频: ID={song_id}, URL={real_audio_url[:100]}...")
+    
+    try:
+        # 发起请求获取音频流
+        audio_response = requests.get(real_audio_url, stream=True, timeout=10)
+        
+        if audio_response.status_code != 200:
+            raise HTTPException(
+                status_code=audio_response.status_code, 
+                detail=f"无法获取音频流: HTTP {audio_response.status_code}"
+            )
+        
+        # 获取 Content-Type 和 Content-Length
+        content_type = audio_response.headers.get("Content-Type", "audio/mpeg")
+        content_length = audio_response.headers.get("Content-Length")
+        
+        # 创建流式响应
+        def audio_stream():
+            try:
+                for chunk in audio_response.iter_content(chunk_size=8192):
+                    if chunk:
+                        yield chunk
+            except Exception as e:
+                print(f"❌ [Stream Proxy] 流式传输错误: {e}")
+        
+        headers = {
+            "Content-Type": content_type,
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "public, max-age=3600",
+        }
+        
+        if content_length:
+            headers["Content-Length"] = content_length
+        
+        print(f"✅ [Stream Proxy] 开始流式传输 (Content-Type: {content_type})")
+        
+        return StreamingResponse(
+            audio_stream(),
+            media_type=content_type,
+            headers=headers
+        )
+        
+    except requests.RequestException as e:
+        print(f"❌ [Stream Proxy] 请求失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取音频流失败: {str(e)}")
+    except Exception as e:
+        print(f"❌ [Stream Proxy] 未知错误: {e}")
+        raise HTTPException(status_code=500, detail=f"代理错误: {str(e)}")
 
 @router.get("/lyric")
 async def get_lyric(id: int):
