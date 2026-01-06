@@ -546,6 +546,7 @@ HTML_TEMPLATE = """
         let currentPage = 1;
         let currentKeywords = '';
         const pageSize = 10;
+        let isSearching = false; // 防止重复搜索
         
         function switchMode(mode) {
             currentMode = mode;
@@ -600,6 +601,13 @@ HTML_TEMPLATE = """
                 return;
             }
             
+            // 防止重复搜索
+            if (isSearching) {
+                console.log('⚠️ 搜索正在进行中，跳过本次请求');
+                return;
+            }
+            
+            isSearching = true;
             currentKeywords = keywords;
             currentPage = page;
             
@@ -633,6 +641,8 @@ HTML_TEMPLATE = """
             } catch (error) {
                 songListDiv.innerHTML = `<div class="error">搜索失败: ${error.message}</div>`;
                 paginationDiv.style.display = 'none';
+            } finally {
+                isSearching = false; // 搜索完成，解除锁定
             }
         }
         
@@ -673,7 +683,7 @@ HTML_TEMPLATE = """
                 return `
                     <li class="song-item" onclick="selectAndPlay(${song.id}, '${escapeHtml(song.name)}', '${escapeHtml(song.artist)}')">
                         <div class="song-info">
-                            <img src="${song.picUrl}?param=60y60" class="song-cover" alt="封面" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 60 60%22%3E%3Crect fill=%22%23ddd%22 width=%2260%22 height=%2260%22/%3E%3Ctext x=%2230%22 y=%2235%22 text-anchor=%22middle%22 fill=%22%23999%22 font-size=%2220%22%3E♪%3C/text%3E%3C/svg%3E'">
+                            <img src="${song.picUrl}?param=60y60" class="song-cover" alt="封面" onerror="if(this.src!=='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 60 60%22%3E%3Crect fill=%22%23ddd%22 width=%2260%22 height=%2260%22/%3E%3Ctext x=%2230%22 y=%2235%22 text-anchor=%22middle%22 fill=%22%23999%22 font-size=%2220%22%3E♪%3C/text%3E%3C/svg%3E') this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 60 60%22%3E%3Crect fill=%22%23ddd%22 width=%2260%22 height=%2260%22/%3E%3Ctext x=%2230%22 y=%2235%22 text-anchor=%22middle%22 fill=%22%23999%22 font-size=%2220%22%3E♪%3C/text%3E%3C/svg%3E'">
                             <div class="song-details">
                                 <div class="song-name">
                                     ${song.name}
