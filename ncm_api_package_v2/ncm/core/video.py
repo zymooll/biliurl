@@ -382,7 +382,7 @@ class VideoGenerator:
             with open(cover_path, 'wb') as f:
                 f.write(cover_response.content)
             
-            # 3. 调整封面大小为正方形1080x1080
+            # 3. 调整封面大小为左侧区域 960x1080
             print("🖼️ 处理封面...")
             img = Image.open(cover_path)
             # 如果是RGBA模式，转换为RGB（JPEG不支持透明度）
@@ -394,11 +394,18 @@ class VideoGenerator:
             elif img.mode != 'RGB':
                 img = img.convert('RGB')
             
-            img = img.resize((1080, 1080), Image.Resampling.LANCZOS)
+            # 调整为左侧区域尺寸，保持纵横比并居中裁剪
+            img = img.resize((960, 1080), Image.Resampling.LANCZOS)
             cover_resized = os.path.join(temp_dir, "cover_resized.jpg")
             img.save(cover_resized, quality=95)
             
-            # 4. 解析歌词
+            # 4. 创建右侧歌词背景（960x1080黑色背景）
+            print("📝 创建歌词背景...")
+            lyrics_bg = Image.new('RGB', (960, 1080), color='black')
+            lyrics_bg_path = os.path.join(temp_dir, "lyrics_bg.jpg")
+            lyrics_bg.save(lyrics_bg_path, quality=95)
+            
+            # 5. 解析歌词
             print("📝 解析歌词...")
             print(f"原始歌词长度: {len(lyrics_lrc) if lyrics_lrc else 0} 字符")
             lyrics_parsed = VideoGenerator.parse_lrc(lyrics_lrc)
@@ -409,7 +416,7 @@ class VideoGenerator:
                 translation_parsed = VideoGenerator.parse_lrc(translation_lrc)
                 print(f"翻译解析结果: {len(translation_parsed)} 行")
             
-            # 5. 生成SRT字幕
+            # 6. 生成SRT字幕
             srt_content = VideoGenerator.generate_lyrics_srt(lyrics_parsed, translation_parsed)
             srt_path = os.path.join(temp_dir, "lyrics.srt")
             
@@ -429,15 +436,13 @@ class VideoGenerator:
             
             print(f"✅ 字幕文件已生成: {srt_path} ({os.path.getsize(srt_path)} bytes)")
             
-            # 6. 使用FFmpeg合成视频
+            # 7. 使用FFmpeg合成视频
             print("🎥 合成视频...")
             
             # FFmpeg命令：
-            # - 左侧1080x1080封面
-            # - 右侧960x1080黑色背景 + 字幕
-            # - 总分辨率2040x1080
-            
-            # 简化方案：直接用封面作为视频背景 + 字幕叠加
+            # - 左侧960x1080封面
+            # - 右侧960x1080黑色背景 + 字幕叠加
+            # - 总分辨率1920x1080
             enc_conf = VideoGenerator._select_encoder(use_gpu, gpu_device)
             encoder = enc_conf["encoder"]
             
@@ -449,10 +454,21 @@ class VideoGenerator:
 
             video_codec_args = ['-c:v', encoder] + enc_conf["encoder_args"]
 
-            # 构建视频滤镜链
-            # 注意：subtitles 滤镜必须在 hwupload 之前（CPU端处理）
-            # 使用最简单的方式：只指定字幕文件，不使用 force_style（避免复杂的转义问题）
-            vf_chain = f"scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,subtitles={srt_path}"
+            # 构建视频滤镜链：实现左右分屏布局
+            # 左侧：封面 (960x1080)
+            # 右侧：黑色背景 + 字幕 (960x1080)
+            # 最终拼接为 1920x1080
+            
+            # 方案：使用 hstack 水平拼接两个输入
+            # 输入0: 封面 (已经是960x1080)
+            # 输入1: 黑色背景 + 字幕
+            
+            # 先创建右侧的字幕视频流
+            right_side_filter = f"color=black:size=960x1080:rate=25[bg];[bg]subtitles={srt_path}:force_style='FontSize=32,PrimaryColour=&Hffffff,Alignment=2,MarginV=50'[right]"
+            
+            # 然后水平拼接左右两部分
+            vf_chain = f"{right_side_filter};[0:v][right]hstack=inputs=2"
+            
             if enc_conf["vf_suffix"]:
                 # VAAPI: 字幕渲染后再上传到GPU
                 vf_chain = f"{vf_chain},{enc_conf['vf_suffix']}"
