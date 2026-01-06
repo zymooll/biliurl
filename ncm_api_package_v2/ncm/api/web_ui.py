@@ -349,6 +349,48 @@ HTML_TEMPLATE = """
             to { transform: rotate(360deg); }
         }
         
+        .api-url-box {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+        }
+        
+        .api-url-box label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .api-url-input {
+            width: calc(100% - 100px);
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            background: white;
+            margin-right: 10px;
+        }
+        
+        .btn-copy {
+            padding: 10px 20px;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-copy:hover {
+            background: #218838;
+            transform: translateY(-2px);
+        }
+        
         @media (max-width: 768px) {
             .header h1 {
                 font-size: 2em;
@@ -369,6 +411,15 @@ HTML_TEMPLATE = """
             }
             
             .btn {
+                width: 100%;
+            }
+            
+            .api-url-input {
+                width: 100%;
+                margin-bottom: 10px;
+            }
+            
+            .btn-copy {
                 width: 100%;
             }
         }
@@ -426,7 +477,7 @@ HTML_TEMPLATE = """
         
         <div id="results" class="results" style="display: none;">
             <div class="results-header">
-                <h2 id="resultsTitle">预载列表</h2>
+                <h2 id="resultsTitle">搜索结果</h2>
                 <span class="result-count" id="resultCount"></span>
             </div>
             <div id="songList"></div>
@@ -434,6 +485,11 @@ HTML_TEMPLATE = """
         
         <div id="videoPlayer" class="video-player" style="display: none;">
             <video id="video" controls autoplay></video>
+            <div class="api-url-box">
+                <label>🔗 API 地址（可复制）:</label>
+                <input type="text" id="apiUrl" readonly class="api-url-input" placeholder="播放视频后显示 API URL...">
+                <button onclick="copyApiUrl()" class="btn-copy">📋 复制</button>
+            </div>
         </div>
     </div>
     
@@ -452,8 +508,8 @@ HTML_TEMPLATE = """
             if (mode === 'search') {
                 btnSearch.classList.add('active');
                 btnDirect.classList.remove('active');
-                searchInput.placeholder = '输入歌曲名或歌手名，自动搜索第一首...';
-                actionButton.innerHTML = '🔍 搜索并播放';
+                searchInput.placeholder = '输入歌曲名或歌手名，搜索后选择...';
+                actionButton.innerHTML = '🔍 搜索歌曲';
                 searchInput.type = 'text';
             } else {
                 btnSearch.classList.remove('active');
@@ -494,74 +550,51 @@ HTML_TEMPLATE = """
                 return;
             }
             
-            const videoPlayerDiv = document.getElementById('videoPlayer');
-            const videoElement = document.getElementById('videoElement');
+            const resultsDiv = document.getElementById('results');
+            const songListDiv = document.getElementById('songList');
+            const resultsTitle = document.getElementById('resultsTitle');
             
-            // 构建参数
-            const params = new URLSearchParams();
-            params.append('keywords', keywords);
+            resultsDiv.style.display = 'block';
+            resultsTitle.textContent = '搜索结果';
+            songListDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>正在搜索...</p></div>';
             
-            const mvCheckbox = document.getElementById('mvCheckbox');
-            const gpuCheckbox = document.getElementById('gpuCheckbox');
-            const levelSelect = document.getElementById('levelSelect');
-            
-            if (mvCheckbox && mvCheckbox.checked) params.append('mv', 'true');
-            if (gpuCheckbox && gpuCheckbox.checked) params.append('use_gpu', 'true');
-            if (levelSelect) params.append('level', levelSelect.value);
-            
-            const videoUrl = `/search?${params.toString()}`;
-            
-            console.log('调用 /search API 搜索并播放');
-            console.log('- 关键词:', keywords);
-            console.log('- 参数:', {
-                mv: mvCheckbox?.checked ? '启用' : '禁用',
-                use_gpu: gpuCheckbox?.checked ? '启用' : '禁用',
-                level: levelSelect?.value || 'standard'
-            });
-            console.log('- URL:', videoUrl);
-            
-            videoPlayerDiv.style.display = 'block';
-            
-            // 使用 fetch 获取重定向后的最终 URL
             try {
-                const response = await fetch(videoUrl);
-                const finalUrl = response.url; // 自动跟随重定向后的最终 URL
-                console.log('- 最终 URL:', finalUrl);
-                // 如果是重定向到的 MV 链接，使用最终 URL；否则使用原 URL
-                if (finalUrl !== videoUrl && finalUrl.includes('://')) {
-                    videoElement.src = finalUrl;
+                console.log('调用 /search API:', keywords);
+                const response = await fetch(`/search?keywords=${encodeURIComponent(keywords)}`);
+                const data = await response.json();
+                
+                if (data.code === 200 && data.songs && data.songs.length > 0) {
+                    currentResults = data.songs;
+                    displayResults(currentResults);
                 } else {
-                    videoElement.src = videoUrl;
+                    songListDiv.innerHTML = '<div class="empty"><div class="empty-icon">😢</div><p>未找到相关歌曲</p></div>';
                 }
             } catch (error) {
-                console.log('获取视频地址失败，尝试直接设置:', error);
-                videoElement.src = videoUrl;
+                songListDiv.innerHTML = `<div class="error">搜索失败: ${error.message}</div>`;
             }
-            videoElement.load();
-            
-            // 滚动到播放器
-            videoPlayerDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
         
         function displayResults(songs) {
             const songListDiv = document.getElementById('songList');
             const resultCountSpan = document.getElementById('resultCount');
             
-            resultCountSpan.textContent = `共 ${songs.length} 首可预载`;
+            resultCountSpan.textContent = `共 ${songs.length} 首歌曲`;
             
             const html = '<ul class="song-list">' + songs.map(song => {
-                const artists = song.artist || '未知';
-                const cover = song.picUrl || '';
+                const hasMv = song.mvId && song.mvId > 0;
+                const fee = song.fee || 0;
                 
                 return `
-                    <li class="song-item" onclick="preloadAndPlay(${song.id}, '${escapeHtml(song.name)}', '${escapeHtml(artists)}')">
+                    <li class="song-item" onclick="selectAndPlay(${song.id}, '${escapeHtml(song.name)}', '${escapeHtml(song.artist)}')">
                         <div class="song-info">
-                            <img src="${cover}?param=60y60" class="song-cover" alt="封面" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 60 60%22%3E%3Crect fill=%22%23ddd%22 width=%2260%22 height=%2260%22/%3E%3Ctext x=%2230%22 y=%2235%22 text-anchor=%22middle%22 fill=%22%23999%22 font-size=%2220%22%3E♪%3C/text%3E%3C/svg%3E'">
+                            <img src="${song.picUrl}?param=60y60" class="song-cover" alt="封面" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 60 60%22%3E%3Crect fill=%22%23ddd%22 width=%2260%22 height=%2260%22/%3E%3Ctext x=%2230%22 y=%2235%22 text-anchor=%22middle%22 fill=%22%23999%22 font-size=%2220%22%3E♪%3C/text%3E%3C/svg%3E'">
                             <div class="song-details">
                                 <div class="song-name">
                                     ${song.name}
+                                    ${hasMv ? '<span class="badge badge-mv">MV</span>' : ''}
+                                    ${fee === 1 ? '<span class="badge badge-vip">VIP</span>' : ''}
                                 </div>
-                                <div class="song-artist">${artists} · ID: ${song.id}</div>
+                                <div class="song-artist">${song.artist} · ID: ${song.id}</div>
                             </div>
                         </div>
                     </li>
@@ -575,8 +608,8 @@ HTML_TEMPLATE = """
             return text.replace(/'/g, "\\'").replace(/"/g, '&quot;');
         }
         
-        async function preloadAndPlay(id, name, artist) {
-            console.log('预载并播放:', name, '-', artist, '(ID:', id + ')');
+        async function selectAndPlay(id, name, artist) {
+            console.log('选择歌曲:', name, '-', artist, '(ID:', id + ')');
             await playSong(id, name, artist);
         }
         
@@ -596,6 +629,11 @@ HTML_TEMPLATE = """
             });
             
             const videoUrl = `/video?${params.toString()}`;
+            
+            // 更新 API URL 显示
+            const apiUrlInput = document.getElementById('apiUrl');
+            const fullApiUrl = window.location.origin + videoUrl;
+            apiUrlInput.value = fullApiUrl;
             
             console.log('调用 /video API');
             console.log('- 歌曲:', name, artist ? `- ${artist}` : '');
@@ -626,14 +664,30 @@ HTML_TEMPLATE = """
             }
             videoElement.load();
             
-            // 显示预载提示
-            const resultsTitle = document.getElementById('resultsTitle');
-            if (resultsTitle) {
-                resultsTitle.textContent = `正在预载: ${name}${artist ? ' - ' + artist : ''}`;
-            }
-            
             // 滚动到播放器
             videoPlayerDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        
+        function copyApiUrl() {
+            const apiUrlInput = document.getElementById('apiUrl');
+            if (!apiUrlInput.value) {
+                alert('请先播放一个视频');
+                return;
+            }
+            
+            apiUrlInput.select();
+            document.execCommand('copy');
+            
+            // 显示复制成功提示
+            const btn = event.target;
+            const originalText = btn.textContent;
+            btn.textContent = '✅ 已复制';
+            btn.style.background = '#28a745';
+            
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.style.background = '';
+            }, 2000);
         }
         
         // 页面加载时聚焦输入框并默认为直接播放模式

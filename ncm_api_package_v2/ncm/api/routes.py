@@ -462,59 +462,69 @@ async def get_lyric(id: int):
 @router.get("/search")
 async def search_song(
     keywords: str,
-    level: str = "standard",
-    simple: bool = False,
-    use_gpu: bool = True,
-    threads: int | None = None,
-    gpu_device: str | None = None,
-    mv: bool = True
+    limit: int = 10,
+    offset: int = 0
 ):
     """
-    10. 搜索歌曲并生成视频
+    10. 搜索歌曲列表（返回JSON格式）
     
-    自动搜索关键词，获取第一首歌曲，生成并返回MP4视频
+    根据关键词搜索歌曲，返回歌曲列表供用户选择
     
     参数:
         keywords: 搜索关键词（必填）
-        level: 音质等级 (standard/higher/exhigh/lossless)
-        simple: 是否使用简化模式（无字幕）
-        use_gpu: 是否使用硬件加速
-        threads: FFmpeg线程数
-        gpu_device: GPU设备路径
-        mv: 是否优先尝试MV
+        limit: 返回结果数量限制，默认10
+        offset: 分页偏移量，默认0
     """
-    print(f"🔍 搜索并生成视频: {keywords}")
+    print(f"🔍 搜索歌曲列表: {keywords}")
     
-    # 执行搜索
-    result = UserInteractive.searchSong(keywords, limit=1, offset=0, type=1)
-    
-    if not result or result.get("code") != 200:
-        raise HTTPException(status_code=404, detail="搜索失败")
-    
-    songs = result.get("result", {}).get("songs", [])
-    if not songs:
-        raise HTTPException(status_code=404, detail="未找到相关歌曲")
-    
-    # 获取第一首歌曲的ID
-    first_song = songs[0]
-    song_id = first_song.get("id")
-    song_name = first_song.get("name")
-    artist_name = first_song.get("ar", [{}])[0].get("name", "未知歌手")
-    print(f"✅ 搜索匹配: {song_name} - {artist_name} (ID: {song_id})")
-    
-    # 转发到 video 路由处理
-    return await generate_video_for_vrchat(
-        background_tasks=BackgroundTasks(),
-        id=song_id,
-        keywords=None,
-        level=level,
-        unblock=False,
-        simple=simple,
-        use_gpu=use_gpu,
-        threads=threads,
-        gpu_device=gpu_device,
-        mv=mv
-    )
+    try:
+        # 执行搜索
+        result = retry_request(UserInteractive.searchSong, keywords, limit=limit, offset=offset, type=1)
+        
+        if not result or result.get("code") != 200:
+            return create_json_response({
+                "code": 404,
+                "message": "搜索失败",
+                "songs": []
+            }, 404)
+        
+        songs = result.get("result", {}).get("songs", [])
+        if not songs:
+            return create_json_response({
+                "code": 200,
+                "message": "未找到相关歌曲",
+                "songs": []
+            })
+        
+        # 格式化歌曲列表
+        formatted_songs = []
+        for song in songs:
+            formatted_songs.append({
+                "id": song.get("id"),
+                "name": song.get("name"),
+                "artist": ", ".join([ar.get("name", "") for ar in song.get("ar", [])]),
+                "album": song.get("al", {}).get("name", ""),
+                "duration": song.get("dt", 0),
+                "picUrl": song.get("al", {}).get("picUrl", ""),
+                "mvId": song.get("mv", 0),
+                "fee": song.get("fee", 0)
+            })
+        
+        print(f"✅ 找到 {len(formatted_songs)} 首歌曲")
+        return create_json_response({
+            "code": 200,
+            "message": "搜索成功",
+            "songs": formatted_songs,
+            "total": len(formatted_songs)
+        })
+        
+    except Exception as e:
+        print(f"❌ 搜索失败: {e}")
+        return create_json_response({
+            "code": 500,
+            "message": f"搜索错误: {str(e)}",
+            "songs": []
+        }, 500)
 
 @router.get("/video/cache/clear")
 async def clear_video_cache():
