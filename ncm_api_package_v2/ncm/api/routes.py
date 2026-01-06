@@ -369,15 +369,15 @@ async def generate_video_for_vrchat(
                 str(song_id),
                 max_retries=2  # 缓存命中时重试次数少一些
             )
-            print("DEBUG: ")
-            print(song_detail)
+            # print("DEBUG: ")
+            # print(song_detail)
             mv_id = song_detail['songs'][0]['mv']
             if mv_id == 0:
               print(f"⚠️ MV 不存在，降级使用音频生成视频")
             else:
               print(f"🎥 尝试获取 MV: 歌曲ID={mv_id}")
               mv_url_api = f"{API_BASE_URL}mv/url?id={mv_id}"
-              print(f"DEBUG: {mv_url_api}")
+              # print(f"DEBUG: {mv_url_api}")
               mv_response = retry_request(
                   requests.get,
                   mv_url_api,
@@ -385,8 +385,8 @@ async def generate_video_for_vrchat(
                   timeout=5
               )
               mv_data = mv_response.json()
-              print("DEBUG: ")
-              print(mv_data)
+              # print("DEBUG: ")
+              # print(mv_data)
               
               # 检查 MV 是否存在且有效
               if (mv_data.get("code") == 200 and 
