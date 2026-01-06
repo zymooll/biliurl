@@ -479,6 +479,7 @@ class VideoGenerator:
             ] + pix_fmt_args + [
                 '-shortest',
                 '-movflags', '+faststart',
+                '-f', 'mp4',  # 明确指定输出格式为 mp4（支持 .tmp 扩展名）
                 '-y',
                 output_path
             ]
@@ -631,6 +632,7 @@ class VideoGenerator:
             ] + pix_fmt_args + [
                 '-shortest',
                 '-movflags', '+faststart',
+                '-f', 'mp4',  # 明确指定输出格式为 mp4（支持 .tmp 扩展名）
                 '-y',
                 output_path
             ]
