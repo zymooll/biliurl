@@ -142,6 +142,22 @@ class VideoGenerator:
                         "pre_args": []
                     }
             
+            # 检查设备权限
+            try:
+                import stat
+                device_stat = os.stat(device)
+                device_mode = stat.filemode(device_stat.st_mode)
+                print(f"   设备权限: {device_mode} (UID:{device_stat.st_uid}, GID:{device_stat.st_gid})")
+                
+                # 检查当前进程是否有读写权限
+                if os.access(device, os.R_OK | os.W_OK):
+                    print(f"   ✅ 当前用户有读写权限")
+                else:
+                    print(f"   ⚠️ 当前用户无读写权限")
+                    print(f"   提示: 将用户添加到 render 或 video 组: sudo usermod -aG render,video $USER")
+            except Exception as e:
+                print(f"   ⚠️ 无法检查设备权限: {e}")
+            
             # 检查驱动文件是否存在
             driver_paths = [
                 '/usr/lib/x86_64-linux-gnu/dri/iHD_drv_video.so',
@@ -198,13 +214,48 @@ class VideoGenerator:
                 
                 if test_result.returncode != 0:
                     print(f"❌ VAAPI 初始化失败 (返回码: {test_result.returncode})")
-                    print(f"   stderr: {test_result.stderr[:500]}")
+                    print(f"   完整错误信息:")
+                    for line in test_result.stderr.split('\n')[:15]:
+                        if line.strip():
+                            print(f"      {line}")
+                    
+                    # 尝试使用 vainfo 获取更多信息
+                    try:
+                        vainfo_result = subprocess.run(
+                            ['vainfo', '--display', 'drm', '--device', device],
+                            capture_output=True,
+                            text=True,
+                            timeout=3,
+                            env=test_env
+                        )
+                        if vainfo_result.returncode == 0:
+                            print(f"   📋 vainfo 输出:")
+                            for line in vainfo_result.stdout.split('\n')[:10]:
+                                if line.strip():
+                                    print(f"      {line}")
+                        else:
+                            print(f"   ⚠️ vainfo 也失败: {vainfo_result.stderr[:200]}")
+                    except FileNotFoundError:
+                        print(f"   💡 建议安装 vainfo 工具: sudo apt install vainfo")
+                    except Exception as vainfo_e:
+                        print(f"   ⚠️ vainfo 检查失败: {vainfo_e}")
+                    
                     if 'No VA display found' in test_result.stderr:
-                        print("   原因: 未找到 VA 显示设备")
+                        print("   🔍 诊断: 未找到 VA 显示设备")
+                        print("      可能原因: 权限不足或驱动未正确加载")
                     if 'Device creation failed' in test_result.stderr:
-                        print("   原因: 设备创建失败")
+                        print("   🔍 诊断: 设备创建失败")
+                        print("      可能原因: 硬件不支持或驱动配置问题")
                     if 'Cannot load libva' in test_result.stderr:
-                        print("   原因: 无法加载 libva 库")
+                        print("   🔍 诊断: 无法加载 libva 库")
+                        print("      可能原因: 缺少依赖库")
+                    
+                    print("   💡 解决方案:")
+                    print("      1. 检查权限: ls -la /dev/dri/renderD128")
+                    print("      2. 添加到组: sudo usermod -aG render,video $USER")
+                    print("      3. 重新登录使组生效")
+                    print("      4. 验证驱动: vainfo --display drm --device /dev/dri/renderD128")
+                    
                     return {
                         "encoder": "libx264",
                         "encoder_args": ['-preset', 'fast', '-crf', '23'],
