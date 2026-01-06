@@ -270,7 +270,7 @@ async def generate_video_for_vrchat(
     level: str = "standard",
     unblock: bool = False,
     simple: bool = False,
-    use_gpu: bool = False,
+    use_gpu: bool = True,
     threads: int | None = None,
     gpu_device: str | None = None
 ):
@@ -283,7 +283,7 @@ async def generate_video_for_vrchat(
         level: 音质等级 (standard/higher/exhigh/lossless)
         unblock: 是否开启解灰模式
         simple: 是否使用简化模式（无字幕，生成更快）
-        use_gpu: 是否尝试使用硬件编码 (macOS=videotoolbox, Linux默认vaapi，Win=nvenc)
+        use_gpu: 是否使用硬件加速（默认True，自动检测并降级）
         threads: 手动指定FFmpeg线程数，留空让FFmpeg自行分配
         gpu_device: Linux VAAPI 设备路径，例如 /dev/dri/renderD128
         
