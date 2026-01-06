@@ -524,10 +524,15 @@ HTML_TEMPLATE = """
             
             // 使用 fetch 获取重定向后的最终 URL
             try {
-                const response = await fetch(videoUrl, { method: 'HEAD' });
+                const response = await fetch(videoUrl);
                 const finalUrl = response.url; // 自动跟随重定向后的最终 URL
                 console.log('- 最终 URL:', finalUrl);
-                videoElement.src = finalUrl;
+                // 如果是重定向到的 MV 链接，使用最终 URL；否则使用原 URL
+                if (finalUrl !== videoUrl && finalUrl.includes('://')) {
+                    videoElement.src = finalUrl;
+                } else {
+                    videoElement.src = videoUrl;
+                }
             } catch (error) {
                 console.log('获取视频地址失败，尝试直接设置:', error);
                 videoElement.src = videoUrl;
@@ -606,10 +611,15 @@ HTML_TEMPLATE = """
             
             // 使用 fetch 获取重定向后的最终 URL
             try {
-                const response = await fetch(videoUrl, { method: 'HEAD' });
+                const response = await fetch(videoUrl);
                 const finalUrl = response.url; // 自动跟随重定向后的最终 URL
                 console.log('- 最终 URL:', finalUrl);
-                videoElement.src = finalUrl;
+                // 如果是重定向到的 MV 链接，使用最终 URL；否则使用原 URL
+                if (finalUrl !== videoUrl && finalUrl.includes('://')) {
+                    videoElement.src = finalUrl;
+                } else {
+                    videoElement.src = videoUrl;
+                }
             } catch (error) {
                 console.log('获取视频地址失败，尝试直接设置:', error);
                 videoElement.src = videoUrl;
