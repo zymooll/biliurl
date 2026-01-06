@@ -502,10 +502,16 @@ class VideoGenerator:
                 if 'CONDA' in key or 'LD_PRELOAD' in key:
                     removed_keys.append(key)
                     del env[key]
-            env['LIBVA_DRIVER_NAME'] = 'iHD'
-            env['LIBVA_DRM_DEVICE'] = '/dev/dri/renderD128'
-            env['LIBVA_DRIVERS_PATH'] = '/usr/lib/x86_64-linux-gnu/dri'
-            print(f"🔧 已清理环境变量: {', '.join(removed_keys) if removed_keys else '无需清理'}")
+            
+            # 只在使用 VAAPI 硬件加速时设置环境变量
+            if use_gpu and enc_conf["encoder"] == "h264_vaapi":
+                env['LIBVA_DRIVER_NAME'] = 'iHD'
+                env['LIBVA_DRM_DEVICE'] = gpu_device or '/dev/dri/renderD128'  # 使用检测到的设备
+                env['LIBVA_DRIVERS_PATH'] = '/usr/lib/x86_64-linux-gnu/dri'
+                print(f"🔧 已设置 VAAPI 环境: device={env['LIBVA_DRM_DEVICE']}")
+            
+            if removed_keys:
+                print(f"🔧 已清理环境变量: {', '.join(removed_keys)}")
             
             # 直接传递列表，不使用 shell=True
             result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, env=env)
@@ -682,10 +688,16 @@ class VideoGenerator:
                 if 'CONDA' in key or 'LD_PRELOAD' in key:
                     removed_keys.append(key)
                     del env[key]
-            env['LIBVA_DRIVER_NAME'] = 'iHD'
-            env['LIBVA_DRM_DEVICE'] = '/dev/dri/renderD128'
-            env['LIBVA_DRIVERS_PATH'] = '/usr/lib/x86_64-linux-gnu/dri'
-            # print(f"🔧 已清理环境变量: {', '.join(removed_keys) if removed_keys else '无需清理'}")
+            
+            # 只在使用 VAAPI 硬件加速时设置环境变量
+            if use_gpu and enc_conf["encoder"] == "h264_vaapi":
+                env['LIBVA_DRIVER_NAME'] = 'iHD'
+                env['LIBVA_DRM_DEVICE'] = gpu_device or '/dev/dri/renderD128'  # 使用检测到的设备
+                env['LIBVA_DRIVERS_PATH'] = '/usr/lib/x86_64-linux-gnu/dri'
+                print(f"🔧 已设置 VAAPI 环境: device={env['LIBVA_DRM_DEVICE']}")
+            
+            if removed_keys:
+                print(f"🔧 已清理环境变量: {', '.join(removed_keys)}")
             
             # 直接传递列表，不使用 shell=True
             result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, env=env)
