@@ -79,7 +79,8 @@ async def api_info():
 
 @router.get("/favicon.ico")
 async def favicon():
-    return JSONResponse(status_code=204, content="")
+    from fastapi.responses import Response
+    return Response(status_code=204)
 
 @router.get("/login/qr/key")
 async def get_qr_key():
