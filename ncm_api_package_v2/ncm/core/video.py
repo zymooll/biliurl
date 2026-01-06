@@ -143,20 +143,56 @@ class VideoGenerator:
                     }
             
             # 检查设备权限
+            has_permission = False
             try:
                 import stat
+                import pwd
+                import grp
+                
                 device_stat = os.stat(device)
                 device_mode = stat.filemode(device_stat.st_mode)
-                print(f"   设备权限: {device_mode} (UID:{device_stat.st_uid}, GID:{device_stat.st_gid})")
+                
+                # 获取设备所属组名
+                try:
+                    gid_name = grp.getgrgid(device_stat.st_gid).gr_name
+                except:
+                    gid_name = str(device_stat.st_gid)
+                
+                # 获取当前用户信息
+                current_uid = os.getuid()
+                current_user = pwd.getpwuid(current_uid).pw_name
+                current_groups = [grp.getgrgid(g).gr_name for g in os.getgroups()]
+                
+                print(f"   设备权限: {device_mode} (UID:{device_stat.st_uid}, GID:{device_stat.st_gid}={gid_name})")
+                print(f"   当前用户: {current_user} (UID:{current_uid})")
+                print(f"   当前用户组: {', '.join(current_groups[:5])}{'...' if len(current_groups) > 5 else ''}")
                 
                 # 检查当前进程是否有读写权限
                 if os.access(device, os.R_OK | os.W_OK):
                     print(f"   ✅ 当前用户有读写权限")
+                    has_permission = True
                 else:
-                    print(f"   ⚠️ 当前用户无读写权限")
-                    print(f"   提示: 将用户添加到 render 或 video 组: sudo usermod -aG render,video $USER")
+                    print(f"   ❌ 当前用户无读写权限")
+                    print(f"\n   🔧 解决方案:")
+                    print(f"      方案1 (推荐): 添加用户到设备组")
+                    print(f"         sudo usermod -aG {gid_name} {current_user}")
+                    print(f"         # 然后退出登录并重新登录")
+                    print(f"\n      方案2: 修改设备权限 (临时，重启后失效)")
+                    print(f"         sudo chmod 666 {device}")
+                    print(f"\n      方案3: 以 root 运行服务 (不推荐)")
+                    print(f"         sudo python run_server.py")
+                    print(f"\n   ⚠️ 权限不足将导致硬件加速不可用，降级为软件编码\n")
+                    
+                    # 直接返回软件编码配置
+                    return {
+                        "encoder": "libx264",
+                        "encoder_args": ['-preset', 'fast', '-crf', '23'],
+                        "vf_suffix": None,
+                        "pre_args": []
+                    }
             except Exception as e:
                 print(f"   ⚠️ 无法检查设备权限: {e}")
+                # 继续尝试，让 FFmpeg 测试来确定
             
             # 检查驱动文件是否存在
             driver_paths = [
