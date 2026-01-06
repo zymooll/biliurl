@@ -157,7 +157,7 @@ async def play_song_redirect(
     level: str = "standard", 
     unblock: bool = False
 ):
-    """8. VRChat 播放专用 (支持 ID 或 关键词搜索)"""
+    """8. VRChat 播放专用 (支持 ID 或 关键词搜索) - 重定向模式"""
     if not id and not keywords:
         raise HTTPException(status_code=400, detail="必须提供 id 或 keywords 参数")
 
@@ -194,6 +194,116 @@ async def play_song_redirect(
         return RedirectResponse(url=result["url"], status_code=307)
     else:
         raise HTTPException(status_code=404, detail="无法获取歌曲链接")
+
+@router.get("/play/direct")
+async def play_song_direct(
+    id: str = None, 
+    keywords: str = None,
+    level: str = "standard", 
+    unblock: bool = False
+):
+    """
+    8B. VRChat 播放专用 - 直接返回 MP3 URL (JSON格式)
+    
+    专为 VRChat 设计，因为 VRChat 不支持 HTTP 重定向
+    
+    参数:
+        id: 歌曲 ID
+        keywords: 搜索关键词（如果未提供ID）
+        level: 音质等级 (standard/higher/exhigh/lossless)
+        unblock: 是否尝试解锁
+    
+    返回示例:
+        {
+            "code": 200,
+            "success": true,
+            "url": "http://m801.music.126.net/...",
+            "song_id": 1969519579,
+            "song_name": "歌曲名",
+            "artist": "歌手名"
+        }
+    """
+    if not id and not keywords:
+        raise HTTPException(status_code=400, detail="必须提供 id 或 keywords 参数")
+
+    song_id = id
+    song_info = {}
+
+    # 如果提供了 keywords 且没有提供 id (或者 id 不是数字)，则进行搜索
+    if keywords and (not song_id or not song_id.isdigit()):
+        print(f"🔍 [Direct] 收到搜索请求: {keywords}")
+        search_result = UserInteractive.searchSong(keywords, limit=1)
+        
+        if not search_result or search_result.get("code") != 200:
+            return create_json_response({
+                "code": 404,
+                "success": False,
+                "message": "搜索失败"
+            }, 404)
+            
+        songs = search_result.get("result", {}).get("songs", [])
+        if not songs:
+            return create_json_response({
+                "code": 404,
+                "success": False,
+                "message": "未找到相关歌曲"
+            }, 404)
+            
+        first_song = songs[0]
+        song_id = first_song.get("id")
+        song_info["song_name"] = first_song.get("name", "")
+        song_info["artist"] = first_song.get("ar", [{}])[0].get("name", "未知歌手")
+        print(f"✅ [Direct] 搜索匹配: {song_info['song_name']} - {song_info['artist']} (ID: {song_id})")
+    
+    # 确保 song_id 是整数
+    try:
+        song_id = int(song_id)
+    except (ValueError, TypeError):
+        return create_json_response({
+            "code": 400,
+            "success": False,
+            "message": "无效的歌曲 ID"
+        }, 400)
+
+    # 获取下载链接
+    cookie = load_cookie()
+    result = UserInteractive.getDownloadUrl(song_id, level, unblock, cookie)
+    
+    if result["success"] and result.get("url"):
+        # 如果搜索时没有获取歌曲信息，则通过 song detail API 获取
+        if not song_info:
+            try:
+                detail_result = UserInteractive.getSongDetail(str(song_id))
+                if detail_result and detail_result.get("code") == 200:
+                    songs = detail_result.get("songs", [])
+                    if songs:
+                        song = songs[0]
+                        song_info["song_name"] = song.get("name", "")
+                        song_info["artist"] = song.get("ar", [{}])[0].get("name", "未知歌手")
+            except Exception as e:
+                print(f"⚠️ 获取歌曲详情失败: {e}")
+        
+        response_data = {
+            "code": 200,
+            "success": True,
+            "url": result["url"],
+            "song_id": song_id,
+            "level": level
+        }
+        
+        # 添加歌曲信息（如果有）
+        if song_info:
+            response_data.update(song_info)
+        
+        print(f"✅ [Direct] 返回直链 URL for ID: {song_id}")
+        return create_json_response(response_data)
+    else:
+        return create_json_response({
+            "code": 404,
+            "success": False,
+            "message": "无法获取歌曲链接",
+            "song_id": song_id
+        }, 404)
 
 @router.get("/lyric")
 async def get_lyric(id: int):
