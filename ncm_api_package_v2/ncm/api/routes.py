@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Query, Response, BackgroundTasks
-from fastapi.responses import JSONResponse, RedirectResponse, FileResponse
+from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, HTMLResponse
 import requests
 import os
 import time
@@ -11,6 +11,7 @@ from ncm.core.lyrics import process_lyrics_matching
 from ncm.core.video import VideoGenerator
 from ncm.utils.cookie import load_cookie, save_cookie
 from ncm.utils.database import db
+from ncm.api.web_ui import get_web_ui_html
 
 router = APIRouter()
 login_handler = None
@@ -68,6 +69,12 @@ def create_json_response(content, status_code=200):
 
 @router.get("/")
 async def root():
+    """返回可视化Web界面"""
+    return HTMLResponse(content=get_web_ui_html())
+
+@router.get("/api")
+async def api_info():
+    """API信息接口"""
     return create_json_response({"message": "NCM API Service is running", "docs": "/docs"})
 
 @router.get("/favicon.ico")
