@@ -242,13 +242,59 @@ async def get_lyric(id: int):
 @router.get("/search")
 async def search_song(
     keywords: str,
-    limit: int = 30,
-    offset: int = 0,
-    type: int = 1
+    level: str = "standard",
+    simple: bool = False,
+    use_gpu: bool = True,
+    threads: int | None = None,
+    gpu_device: str | None = None,
+    mv: bool = True
 ):
-    """10. 搜索歌曲"""
-    result = UserInteractive.searchSong(keywords, limit, offset, type)
-    return create_json_response(result)
+    """
+    10. 搜索歌曲并生成视频
+    
+    自动搜索关键词，获取第一首歌曲，生成并返回MP4视频
+    
+    参数:
+        keywords: 搜索关键词（必填）
+        level: 音质等级 (standard/higher/exhigh/lossless)
+        simple: 是否使用简化模式（无字幕）
+        use_gpu: 是否使用硬件加速
+        threads: FFmpeg线程数
+        gpu_device: GPU设备路径
+        mv: 是否优先尝试MV
+    """
+    print(f"🔍 搜索并生成视频: {keywords}")
+    
+    # 执行搜索
+    result = UserInteractive.searchSong(keywords, limit=1, offset=0, type=1)
+    
+    if not result or result.get("code") != 200:
+        raise HTTPException(status_code=404, detail="搜索失败")
+    
+    songs = result.get("result", {}).get("songs", [])
+    if not songs:
+        raise HTTPException(status_code=404, detail="未找到相关歌曲")
+    
+    # 获取第一首歌曲的ID
+    first_song = songs[0]
+    song_id = first_song.get("id")
+    song_name = first_song.get("name")
+    artist_name = first_song.get("ar", [{}])[0].get("name", "未知歌手")
+    print(f"✅ 搜索匹配: {song_name} - {artist_name} (ID: {song_id})")
+    
+    # 转发到 video 路由处理
+    return await generate_video_for_vrchat(
+        background_tasks=BackgroundTasks(),
+        id=song_id,
+        keywords=None,
+        level=level,
+        unblock=False,
+        simple=simple,
+        use_gpu=use_gpu,
+        threads=threads,
+        gpu_device=gpu_device,
+        mv=mv
+    )
 
 @router.get("/video/cache/clear")
 async def clear_video_cache():
