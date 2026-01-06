@@ -15,6 +15,9 @@ from ncm.utils.database import db
 router = APIRouter()
 login_handler = None
 
+# API 配置 - 上游服务地址
+API_BASE_URL = os.getenv("NCM_API_BASE_URL", "http://localhost:3002")
+
 def init_login_handler():
     global login_handler
     login_handler = LoginProtocol()
@@ -312,7 +315,8 @@ async def generate_video_for_vrchat(
     simple: bool = False,
     use_gpu: bool = True,
     threads: int | None = None,
-    gpu_device: str | None = None
+    gpu_device: str | None = None,
+    mv: bool = True
 ):
     """
     13. 生成MP4视频 (VRChat USharpVideo专用)
@@ -326,9 +330,10 @@ async def generate_video_for_vrchat(
         use_gpu: 是否使用硬件加速（默认True，自动检测并降级）
         threads: 手动指定FFmpeg线程数，留空让FFmpeg自行分配
         gpu_device: Linux VAAPI 设备路径，例如 /dev/dri/renderD128
+        mv: 是否优先尝试获取MV（默认True，设为False跳过MV检查）
         
     返回:
-        MP4视频文件流
+        MP4视频文件流或MV直链重定向
     """
     if not id and not keywords:
         raise HTTPException(status_code=400, detail="必须提供 id 或 keywords 参数")
@@ -357,6 +362,48 @@ async def generate_video_for_vrchat(
         song_id = int(song_id)
     except (ValueError, TypeError):
         raise HTTPException(status_code=400, detail="无效的歌曲 ID")
+
+    # 🎬 优先尝试获取 MV（除非明确指定 mv=0）
+    if mv:
+        try:
+            print(f"🎥 尝试获取 MV: 歌曲ID={song_id}")
+            mv_url_api = f"{API_BASE_URL}/mv/url?id={song_id}"
+            mv_response = retry_request(
+                requests.get,
+                mv_url_api,
+                max_retries=2,  # MV 检查失败可快速降级，不需要太多重试
+                timeout=5
+            )
+            mv_data = mv_response.json()
+            
+            # 检查 MV 是否存在且有效
+            if (mv_data.get("code") == 200 and 
+                mv_data.get("data") and 
+                mv_data["data"].get("url") and 
+                mv_data["data"].get("code") == 200):
+                
+                mv_url = mv_data["data"]["url"]
+                mv_size = mv_data["data"].get("size", 0)
+                mv_resolution = mv_data["data"].get("r", 0)
+                print(f"✅ 找到 MV！分辨率={mv_resolution}p, 大小={mv_size / 1024 / 1024:.2f}MB")
+                print(f"🔗 重定向到 MV: {mv_url[:100]}...")
+                
+                # 直接返回 MV 直链的重定向
+                return RedirectResponse(
+                    url=mv_url,
+                    status_code=302,
+                    headers={
+                        "Cache-Control": "public, max-age=3600"
+                    }
+                )
+            else:
+                mv_code = mv_data.get("data", {}).get("code") if mv_data.get("data") else None
+                print(f"⚠️ MV 不存在 (code={mv_code})，降级使用音频生成视频")
+                
+        except Exception as e:
+            print(f"⚠️ MV 获取失败: {e}，降级使用音频生成视频")
+    else:
+        print(f"⏭️ 跳过 MV 检查（mv=0），直接生成视频")
 
     # 🚀 优先检查缓存，避免不必要的上游请求
     print(f"🔍 检查缓存: 歌曲ID={song_id}, 音质={level}, 模式={'简单' if simple else '完整'}")
