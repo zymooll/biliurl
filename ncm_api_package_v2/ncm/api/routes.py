@@ -374,6 +374,8 @@ async def generate_video_for_vrchat(
                 timeout=5
             )
             mv_data = mv_response.json()
+            print("DEBUG: ")
+            print(mv_data)
             
             # 检查 MV 是否存在且有效
             if (mv_data.get("code") == 200 and 
