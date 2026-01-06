@@ -381,10 +381,10 @@ HTML_TEMPLATE = """
             <p>网易云音乐视频服务 - 预载、缓存、播放</p>
             <div class="api-selector">
                 <button id="btnSearch" class="active" onclick="switchMode('search')">
-                    📋 预载列表模式
+                    � 关键词搜索
                 </button>
                 <button id="btnDirect" onclick="switchMode('direct')">
-                    🎯 直接播放模式
+                    🎯 歌曲ID
                 </button>
             </div>
         </div>
@@ -395,7 +395,7 @@ HTML_TEMPLATE = """
                     type="text" 
                     id="searchInput" 
                     class="search-input" 
-                    placeholder="预载列表模式: 输入歌曲名查找 | 直接模式: 输入歌曲ID"
+                    placeholder="关键词: 输入歌曲名搜索 | 歌曲ID: 直接输入"
                     onkeypress="if(event.key==='Enter') handleAction()"
                 >
                 <button class="btn btn-primary" onclick="handleAction()" id="actionButton">
@@ -452,13 +452,13 @@ HTML_TEMPLATE = """
             if (mode === 'search') {
                 btnSearch.classList.add('active');
                 btnDirect.classList.remove('active');
-                searchInput.placeholder = '预载列表模式: 输入歌曲名或歌手名...';
-                actionButton.innerHTML = '🔍 查找并预载';
+                searchInput.placeholder = '输入歌曲名或歌手名，自动搜索第一首...';
+                actionButton.innerHTML = '🔍 搜索并播放';
                 searchInput.type = 'text';
             } else {
                 btnSearch.classList.remove('active');
                 btnDirect.classList.add('active');
-                searchInput.placeholder = '直接播放模式: 输入歌曲ID (例如: 1330944279)';
+                searchInput.placeholder = '输入歌曲ID (例如: 1330944279)';
                 actionButton.innerHTML = '▶️ 直接播放';
                 searchInput.type = 'number';
                 resultsDiv.style.display = 'none';
@@ -521,7 +521,17 @@ HTML_TEMPLATE = """
             console.log('- URL:', videoUrl);
             
             videoPlayerDiv.style.display = 'block';
-            videoElement.src = videoUrl;
+            
+            // 使用 fetch 获取重定向后的最终 URL
+            try {
+                const response = await fetch(videoUrl, { method: 'HEAD' });
+                const finalUrl = response.url; // 自动跟随重定向后的最终 URL
+                console.log('- 最终 URL:', finalUrl);
+                videoElement.src = finalUrl;
+            } catch (error) {
+                console.log('获取视频地址失败，尝试直接设置:', error);
+                videoElement.src = videoUrl;
+            }
             videoElement.load();
             
             // 滚动到播放器
@@ -593,7 +603,17 @@ HTML_TEMPLATE = """
             console.log('- URL:', videoUrl);
             
             videoPlayerDiv.style.display = 'block';
-            videoElement.src = videoUrl;
+            
+            // 使用 fetch 获取重定向后的最终 URL
+            try {
+                const response = await fetch(videoUrl, { method: 'HEAD' });
+                const finalUrl = response.url; // 自动跟随重定向后的最终 URL
+                console.log('- 最终 URL:', finalUrl);
+                videoElement.src = finalUrl;
+            } catch (error) {
+                console.log('获取视频地址失败，尝试直接设置:', error);
+                videoElement.src = videoUrl;
+            }
             videoElement.load();
             
             // 显示预载提示
