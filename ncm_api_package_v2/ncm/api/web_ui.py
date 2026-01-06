@@ -47,6 +47,37 @@ HTML_TEMPLATE = """
             opacity: 0.9;
         }
         
+        .api-selector {
+            background: rgba(255,255,255,0.2);
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 20px;
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+        }
+        
+        .api-selector button {
+            padding: 10px 25px;
+            border: 2px solid white;
+            background: transparent;
+            color: white;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .api-selector button.active {
+            background: white;
+            color: #667eea;
+        }
+        
+        .api-selector button:hover {
+            transform: translateY(-2px);
+        }
+        
         .search-box {
             background: white;
             border-radius: 12px;
@@ -347,7 +378,15 @@ HTML_TEMPLATE = """
     <div class="container">
         <div class="header">
             <h1>🎵 NCM Video Service</h1>
-            <p>网易云音乐视频服务 - 搜索、播放、下载</p>
+            <p>网易云音乐视频服务 - 预载、缓存、播放</p>
+            <div class="api-selector">
+                <button id="btnSearch" class="active" onclick="switchMode('search')">
+                    📋 预载列表模式
+                </button>
+                <button id="btnDirect" onclick="switchMode('direct')">
+                    🎯 直接播放模式
+                </button>
+            </div>
         </div>
         
         <div class="search-box">
@@ -356,11 +395,11 @@ HTML_TEMPLATE = """
                     type="text" 
                     id="searchInput" 
                     class="search-input" 
-                    placeholder="输入歌曲名、歌手名..."
-                    onkeypress="if(event.key==='Enter') searchSongs()"
+                    placeholder="预载列表模式: 输入歌曲名查找 | 直接模式: 输入歌曲ID"
+                    onkeypress="if(event.key==='Enter') handleAction()"
                 >
-                <button class="btn btn-primary" onclick="searchSongs()">
-                    🔍 搜索
+                <button class="btn btn-primary" onclick="handleAction()" id="actionButton">
+                    🔍 查找并预载
                 </button>
             </div>
             
@@ -387,7 +426,7 @@ HTML_TEMPLATE = """
         
         <div id="results" class="results" style="display: none;">
             <div class="results-header">
-                <h2>搜索结果</h2>
+                <h2 id="resultsTitle">预载列表</h2>
                 <span class="result-count" id="resultCount"></span>
             </div>
             <div id="songList"></div>
@@ -400,21 +439,71 @@ HTML_TEMPLATE = """
     
     <script>
         let currentResults = [];
+        let currentMode = 'search'; // 'search' or 'direct'
+        
+        function switchMode(mode) {
+            currentMode = mode;
+            const btnSearch = document.getElementById('btnSearch');
+            const btnDirect = document.getElementById('btnDirect');
+            const searchInput = document.getElementById('searchInput');
+            const actionButton = document.getElementById('actionButton');
+            const resultsDiv = document.getElementById('results');
+            
+            if (mode === 'search') {
+                btnSearch.classList.add('active');
+                btnDirect.classList.remove('active');
+                searchInput.placeholder = '预载列表模式: 输入歌曲名或歌手名...';
+                actionButton.innerHTML = '🔍 查找并预载';
+                searchInput.type = 'text';
+            } else {
+                btnSearch.classList.remove('active');
+                btnDirect.classList.add('active');
+                searchInput.placeholder = '直接播放模式: 输入歌曲ID (例如: 1330944279)';
+                actionButton.innerHTML = '▶️ 直接播放';
+                searchInput.type = 'number';
+                resultsDiv.style.display = 'none';
+            }
+            
+            searchInput.value = '';
+            searchInput.focus();
+        }
+        
+        async function handleAction() {
+            if (currentMode === 'search') {
+                await searchSongs();
+            } else {
+                await directPlay();
+            }
+        }
+        
+        async function directPlay() {
+            const songId = document.getElementById('searchInput').value.trim();
+            if (!songId || isNaN(songId)) {
+                alert('请输入有效的歌曲ID（纯数字）');
+                return;
+            }
+            
+            console.log('直接播放模式: 歌曲ID =', songId);
+            await playSong(parseInt(songId), '歌曲ID: ' + songId, '');
+        }
         
         async function searchSongs() {
             const keywords = document.getElementById('searchInput').value.trim();
             if (!keywords) {
-                alert('请输入搜索关键词');
+                alert('请输入歌曲名或歌手名');
                 return;
             }
             
             const resultsDiv = document.getElementById('results');
             const songListDiv = document.getElementById('songList');
+            const resultsTitle = document.getElementById('resultsTitle');
             
             resultsDiv.style.display = 'block';
-            songListDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>搜索中...</p></div>';
+            resultsTitle.textContent = '预载列表';
+            songListDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>正在查找歌曲...</p></div>';
             
             try {
+                console.log('调用 /search API:', keywords);
                 const response = await fetch(`/search?keywords=${encodeURIComponent(keywords)}`);
                 const data = await response.json();
                 
@@ -425,7 +514,7 @@ HTML_TEMPLATE = """
                     songListDiv.innerHTML = '<div class="empty"><div class="empty-icon">😢</div><p>未找到相关歌曲</p></div>';
                 }
             } catch (error) {
-                songListDiv.innerHTML = `<div class="error">搜索失败: ${error.message}</div>`;
+                songListDiv.innerHTML = `<div class="error">查找失败: ${error.message}</div>`;
             }
         }
         
@@ -433,7 +522,7 @@ HTML_TEMPLATE = """
             const songListDiv = document.getElementById('songList');
             const resultCountSpan = document.getElementById('resultCount');
             
-            resultCountSpan.textContent = `共 ${songs.length} 首`;
+            resultCountSpan.textContent = `共 ${songs.length} 首可预载`;
             
             const html = '<ul class="song-list">' + songs.map(song => {
                 const artists = song.ar ? song.ar.map(a => a.name).join(' / ') : '未知';
@@ -442,7 +531,7 @@ HTML_TEMPLATE = """
                 const fee = song.fee || 0;
                 
                 return `
-                    <li class="song-item" onclick="playSong(${song.id}, '${escapeHtml(song.name)}', '${escapeHtml(artists)}')">
+                    <li class="song-item" onclick="preloadAndPlay(${song.id}, '${escapeHtml(song.name)}', '${escapeHtml(artists)}')">
                         <div class="song-info">
                             <img src="${cover}?param=60y60" class="song-cover" alt="封面" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 60 60%22%3E%3Crect fill=%22%23ddd%22 width=%2260%22 height=%2260%22/%3E%3Ctext x=%2230%22 y=%2235%22 text-anchor=%22middle%22 fill=%22%23999%22 font-size=%2220%22%3E♪%3C/text%3E%3C/svg%3E'">
                             <div class="song-details">
@@ -451,7 +540,7 @@ HTML_TEMPLATE = """
                                     ${hasMv ? '<span class="badge badge-mv">MV</span>' : ''}
                                     ${fee === 1 ? '<span class="badge badge-vip">VIP</span>' : ''}
                                 </div>
-                                <div class="song-artist">${artists}</div>
+                                <div class="song-artist">${artists} · ID: ${song.id}</div>
                             </div>
                         </div>
                     </li>
@@ -463,6 +552,11 @@ HTML_TEMPLATE = """
         
         function escapeHtml(text) {
             return text.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        }
+        
+        async function preloadAndPlay(id, name, artist) {
+            console.log('预载并播放:', name, '-', artist, '(ID:', id + ')');
+            await playSong(id, name, artist);
         }
         
         async function playSong(id, name, artist) {
@@ -482,20 +576,33 @@ HTML_TEMPLATE = """
             
             const videoUrl = `/video?${params.toString()}`;
             
-            console.log('Playing:', name, '-', artist);
-            console.log('Video URL:', videoUrl);
+            console.log('调用 /video API');
+            console.log('- 歌曲:', name, artist ? `- ${artist}` : '');
+            console.log('- ID:', id);
+            console.log('- 参数:', {
+                mv: useMv ? '启用' : '禁用',
+                use_gpu: useGpu ? '启用' : '禁用',
+                level: level
+            });
+            console.log('- URL:', videoUrl);
             
             videoPlayerDiv.style.display = 'block';
             videoElement.src = videoUrl;
             videoElement.load();
             
+            // 显示预载提示
+            const resultsTitle = document.getElementById('resultsTitle');
+            if (resultsTitle) {
+                resultsTitle.textContent = `正在预载: ${name}${artist ? ' - ' + artist : ''}`;
+            }
+            
             // 滚动到播放器
             videoPlayerDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
         
-        // 页面加载时聚焦搜索框
+        // 页面加载时聚焦输入框并默认为搜索模式
         window.onload = function() {
-            document.getElementById('searchInput').focus();
+            switchMode('search');
         };
     </script>
 </body>
