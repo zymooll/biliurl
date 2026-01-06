@@ -494,28 +494,38 @@ HTML_TEMPLATE = """
                 return;
             }
             
-            const resultsDiv = document.getElementById('results');
-            const songListDiv = document.getElementById('songList');
-            const resultsTitle = document.getElementById('resultsTitle');
+            const videoPlayerDiv = document.getElementById('videoPlayer');
+            const videoElement = document.getElementById('videoElement');
             
-            resultsDiv.style.display = 'block';
-            resultsTitle.textContent = '预载列表';
-            songListDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>正在查找歌曲...</p></div>';
+            // 构建参数
+            const params = new URLSearchParams();
+            params.append('keywords', keywords);
             
-            try {
-                console.log('调用 /search API:', keywords);
-                const response = await fetch(`/search?keywords=${encodeURIComponent(keywords)}`);
-                const data = await response.json();
-                
-                if (data.code === 200 && data.result && data.result.songs) {
-                    currentResults = data.result.songs;
-                    displayResults(currentResults);
-                } else {
-                    songListDiv.innerHTML = '<div class="empty"><div class="empty-icon">😢</div><p>未找到相关歌曲</p></div>';
-                }
-            } catch (error) {
-                songListDiv.innerHTML = `<div class="error">查找失败: ${error.message}</div>`;
-            }
+            const mvCheckbox = document.getElementById('mvCheckbox');
+            const gpuCheckbox = document.getElementById('gpuCheckbox');
+            const levelSelect = document.getElementById('levelSelect');
+            
+            if (mvCheckbox && mvCheckbox.checked) params.append('mv', 'true');
+            if (gpuCheckbox && gpuCheckbox.checked) params.append('use_gpu', 'true');
+            if (levelSelect) params.append('level', levelSelect.value);
+            
+            const videoUrl = `/search?${params.toString()}`;
+            
+            console.log('调用 /search API 搜索并播放');
+            console.log('- 关键词:', keywords);
+            console.log('- 参数:', {
+                mv: mvCheckbox?.checked ? '启用' : '禁用',
+                use_gpu: gpuCheckbox?.checked ? '启用' : '禁用',
+                level: levelSelect?.value || 'standard'
+            });
+            console.log('- URL:', videoUrl);
+            
+            videoPlayerDiv.style.display = 'block';
+            videoElement.src = videoUrl;
+            videoElement.load();
+            
+            // 滚动到播放器
+            videoPlayerDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
         
         function displayResults(songs) {
@@ -525,10 +535,8 @@ HTML_TEMPLATE = """
             resultCountSpan.textContent = `共 ${songs.length} 首可预载`;
             
             const html = '<ul class="song-list">' + songs.map(song => {
-                const artists = song.ar ? song.ar.map(a => a.name).join(' / ') : '未知';
-                const cover = song.al && song.al.picUrl ? song.al.picUrl : '';
-                const hasMv = song.mv && song.mv > 0;
-                const fee = song.fee || 0;
+                const artists = song.artist || '未知';
+                const cover = song.picUrl || '';
                 
                 return `
                     <li class="song-item" onclick="preloadAndPlay(${song.id}, '${escapeHtml(song.name)}', '${escapeHtml(artists)}')">
@@ -537,8 +545,6 @@ HTML_TEMPLATE = """
                             <div class="song-details">
                                 <div class="song-name">
                                     ${song.name}
-                                    ${hasMv ? '<span class="badge badge-mv">MV</span>' : ''}
-                                    ${fee === 1 ? '<span class="badge badge-vip">VIP</span>' : ''}
                                 </div>
                                 <div class="song-artist">${artists} · ID: ${song.id}</div>
                             </div>
@@ -600,9 +606,9 @@ HTML_TEMPLATE = """
             videoPlayerDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
         
-        // 页面加载时聚焦输入框并默认为搜索模式
+        // 页面加载时聚焦输入框并默认为直接播放模式
         window.onload = function() {
-            switchMode('search');
+            switchMode('direct');
         };
     </script>
 </body>
