@@ -120,6 +120,9 @@ class VideoGenerator:
             # Intel 核显：优先使用 VAAPI (Video Acceleration API)，兼容性更好
             device = gpu_device or "/dev/dri/renderD128"
             
+            print(f"🔍 检查 VAAPI 硬件加速支持...")
+            print(f"   设备路径: {device}")
+            
             # 检查设备是否存在
             if not os.path.exists(device):
                 print(f"⚠️ 设备 {device} 不存在，尝试查找其他设备...")
@@ -131,7 +134,7 @@ class VideoGenerator:
                         device = alt_device
                         break
                 else:
-                    print("⚠️ 未找到可用的硬件设备，降级使用软件编码")
+                    print("❌ 未找到可用的硬件设备，降级使用软件编码")
                     return {
                         "encoder": "libx264",
                         "encoder_args": ['-preset', 'fast', '-crf', '23'],
@@ -139,27 +142,80 @@ class VideoGenerator:
                         "pre_args": []
                     }
             
+            # 检查驱动文件是否存在
+            driver_paths = [
+                '/usr/lib/x86_64-linux-gnu/dri/iHD_drv_video.so',
+                '/usr/lib/x86_64-linux-gnu/dri/i965_drv_video.so'
+            ]
+            driver_found = False
+            for driver_path in driver_paths:
+                if os.path.exists(driver_path):
+                    print(f"✅ 找到驱动: {driver_path}")
+                    driver_found = True
+                    break
+            
+            if not driver_found:
+                print(f"❌ 未找到 VAAPI 驱动文件，尝试的路径: {', '.join(driver_paths)}")
+                print("   请安装: sudo apt install intel-media-va-driver")
+                return {
+                    "encoder": "libx264",
+                    "encoder_args": ['-preset', 'fast', '-crf', '23'],
+                    "vf_suffix": None,
+                    "pre_args": []
+                }
+            
             # 验证 VAAPI 是否真正可用（使用系统 ffmpeg 测试）
             try:
+                # 清理 Conda 环境变量并设置 VAAPI 环境
+                test_env = os.environ.copy()
+                removed_keys = []
+                for key in list(test_env.keys()):
+                    if 'CONDA' in key or 'LD_PRELOAD' in key:
+                        removed_keys.append(key)
+                        del test_env[key]
+                
+                test_env['LIBVA_DRIVER_NAME'] = 'iHD'
+                test_env['LIBVA_DRM_DEVICE'] = device
+                test_env['LIBVA_DRIVERS_PATH'] = '/usr/lib/x86_64-linux-gnu/dri'
+                
+                print(f"🔧 测试环境配置:")
+                print(f"   LIBVA_DRIVER_NAME: {test_env['LIBVA_DRIVER_NAME']}")
+                print(f"   LIBVA_DRM_DEVICE: {test_env['LIBVA_DRM_DEVICE']}")
+                print(f"   LIBVA_DRIVERS_PATH: {test_env['LIBVA_DRIVERS_PATH']}")
+                if removed_keys:
+                    print(f"   已清理: {', '.join(removed_keys[:5])}...")
+                
                 # 使用系统 ffmpeg 测试 VAAPI 设备是否可用（避免 Conda 的库冲突）
                 ffmpeg_path = VideoGenerator._get_ffmpeg_path()
+                print(f"🔧 FFmpeg 路径: {ffmpeg_path}")
                 test_result = subprocess.run(
                     [ffmpeg_path, '-init_hw_device', f'vaapi=va:{device}', '-f', 'lavfi', '-i', 'nullsrc', '-t', '0.001', '-f', 'null', '-'],
                     capture_output=True,
                     text=True,
-                    timeout=5
+                    timeout=5,
+                    env=test_env
                 )
-                if test_result.returncode != 0 or 'No VA display found' in test_result.stderr or 'Device creation failed' in test_result.stderr:
-                    print(f"⚠️ VAAPI 设备 {device} 不可用，降级使用软件编码")
-                    print(f"   原因: {test_result.stderr[:200] if test_result.stderr else '未知错误'}")
+                
+                if test_result.returncode != 0:
+                    print(f"❌ VAAPI 初始化失败 (返回码: {test_result.returncode})")
+                    print(f"   stderr: {test_result.stderr[:500]}")
+                    if 'No VA display found' in test_result.stderr:
+                        print("   原因: 未找到 VA 显示设备")
+                    if 'Device creation failed' in test_result.stderr:
+                        print("   原因: 设备创建失败")
+                    if 'Cannot load libva' in test_result.stderr:
+                        print("   原因: 无法加载 libva 库")
                     return {
                         "encoder": "libx264",
                         "encoder_args": ['-preset', 'fast', '-crf', '23'],
                         "vf_suffix": None,
                         "pre_args": []
                     }
+                
+                print(f"✅ VAAPI 测试通过")
+                
             except subprocess.TimeoutExpired:
-                print("⚠️ VAAPI 检测超时，降级使用软件编码")
+                print("❌ VAAPI 检测超时，降级使用软件编码")
                 return {
                     "encoder": "libx264",
                     "encoder_args": ['-preset', 'fast', '-crf', '23'],
@@ -167,7 +223,9 @@ class VideoGenerator:
                     "pre_args": []
                 }
             except Exception as e:
-                print(f"⚠️ VAAPI 检测失败: {e}，降级使用软件编码")
+                print(f"❌ VAAPI 检测异常: {e}，降级使用软件编码")
+                import traceback
+                traceback.print_exc()
                 return {
                     "encoder": "libx264",
                     "encoder_args": ['-preset', 'fast', '-crf', '23'],
