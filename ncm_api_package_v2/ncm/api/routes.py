@@ -369,6 +369,8 @@ async def generate_video_for_vrchat(
                 str(song_id),
                 max_retries=2  # 缓存命中时重试次数少一些
             )
+            print("DEBUG: ")
+            print(song_detail)
             mv_id = song_detail.get("mv")
             if mv_id == 0:
               print(f"⚠️ MV 不存在，降级使用音频生成视频")
