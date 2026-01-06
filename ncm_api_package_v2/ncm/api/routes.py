@@ -365,8 +365,8 @@ async def generate_video_for_vrchat(
     if mv:
         try:
             print(f"🎥 尝试获取 MV: 歌曲ID={song_id}")
-            mv_url_api = f"{API_BASE_URL}/mv/url?id={song_id}"
-            print(f"DEBUG: {mv_url_api}")
+            mv_url_api = f"{API_BASE_URL}mv/url?id={song_id}"
+            # print(f"DEBUG: {mv_url_api}")
             mv_response = retry_request(
                 requests.get,
                 mv_url_api,
