@@ -788,7 +788,7 @@ HTML_TEMPLATE = """
         
         // 页面加载时聚焦输入框并默认为直接播放模式
         window.onload = function() {
-            switchMode('direct');
+            switchMode('search');
         };
     </script>
 </body>

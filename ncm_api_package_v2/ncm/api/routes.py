@@ -528,6 +528,77 @@ async def search_song(
             "songs": []
         }, 500)
 
+@router.get("/vrcsearch")
+async def vrc_search_song(
+    keywords: str,
+    level: str = "standard",
+    simple: bool = False,
+    use_gpu: bool = True,
+    threads: int | None = None,
+    gpu_device: str | None = None,
+    mv: bool = True
+):
+    """
+    10b. VRChat搜索快捷方式 - 搜索第一首歌曲并重定向到视频
+    
+    自动搜索关键词，获取第一首歌曲，重定向到 /video API
+    
+    参数:
+        keywords: 搜索关键词（必填）
+        level: 音质等级 (standard/higher/exhigh/lossless)
+        simple: 是否使用简化模式（无字幕）
+        use_gpu: 是否使用硬件加速
+        threads: FFmpeg线程数
+        gpu_device: GPU设备路径
+        mv: 是否优先尝试MV
+    """
+    print(f"🔍 [VRCSearch] 搜索并重定向: {keywords}")
+    
+    try:
+        # 执行搜索
+        result = retry_request(UserInteractive.searchSong, keywords, limit=1, offset=0, type=1)
+        
+        if not result or result.get("code") != 200:
+            raise HTTPException(status_code=404, detail="搜索失败")
+        
+        songs = result.get("result", {}).get("songs", [])
+        if not songs:
+            raise HTTPException(status_code=404, detail="未找到相关歌曲")
+        
+        # 获取第一首歌曲的ID
+        first_song = songs[0]
+        song_id = first_song.get("id")
+        song_name = first_song.get("name")
+        artist_name = first_song.get("ar", [{}])[0].get("name", "未知歌手")
+        print(f"✅ [VRCSearch] 匹配: {song_name} - {artist_name} (ID: {song_id})")
+        
+        # 构建重定向URL
+        from urllib.parse import urlencode
+        params = {
+            "id": song_id,
+            "level": level,
+            "mv": "1" if mv else "0",
+            "use_gpu": "1" if use_gpu else "0",
+        }
+        
+        if simple:
+            params["simple"] = "1"
+        if threads:
+            params["threads"] = threads
+        if gpu_device:
+            params["gpu_device"] = gpu_device
+        
+        redirect_url = f"/video?{urlencode(params)}"
+        print(f"🔗 [VRCSearch] 重定向到: {redirect_url}")
+        
+        return RedirectResponse(url=redirect_url, status_code=302)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ [VRCSearch] 错误: {e}")
+        raise HTTPException(status_code=500, detail=f"搜索错误: {str(e)}")
+
 @router.get("/video/cache/clear")
 async def clear_video_cache():
     """11. 清理视频缓存"""
