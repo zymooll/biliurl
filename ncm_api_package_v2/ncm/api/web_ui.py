@@ -291,6 +291,48 @@ HTML_TEMPLATE = """
             border-left: 4px solid #c33;
         }
         
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            padding: 20px 0;
+            margin-top: 20px;
+            border-top: 1px solid #eee;
+        }
+        
+        .btn-page {
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            min-width: 120px;
+        }
+        
+        .btn-page:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-page:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .page-info {
+            font-size: 16px;
+            font-weight: 600;
+            color: #667eea;
+            min-width: 100px;
+            text-align: center;
+        }
+        
         .video-player {
             margin-top: 30px;
             background: #000;
@@ -475,14 +517,6 @@ HTML_TEMPLATE = """
             </div>
         </div>
         
-        <div id="results" class="results" style="display: none;">
-            <div class="results-header">
-                <h2 id="resultsTitle">搜索结果</h2>
-                <span class="result-count" id="resultCount"></span>
-            </div>
-            <div id="songList"></div>
-        </div>
-        
         <div id="videoPlayer" class="video-player" style="display: none;">
             <video id="video" controls autoplay></video>
             <div class="api-url-box">
@@ -491,11 +525,27 @@ HTML_TEMPLATE = """
                 <button onclick="copyApiUrl()" class="btn-copy">📋 复制</button>
             </div>
         </div>
+        
+        <div id="results" class="results" style="display: none;">
+            <div class="results-header">
+                <h2 id="resultsTitle">搜索结果</h2>
+                <span class="result-count" id="resultCount"></span>
+            </div>
+            <div id="songList"></div>
+            <div class="pagination" id="pagination" style="display: none;">
+                <button onclick="prevPage()" id="btnPrev" class="btn-page">← 上一页</button>
+                <span id="pageInfo" class="page-info">第 1 页</span>
+                <button onclick="nextPage()" id="btnNext" class="btn-page">下一页 →</button>
+            </div>
+        </div>
     </div>
     
     <script>
         let currentResults = [];
         let currentMode = 'search'; // 'search' or 'direct'
+        let currentPage = 1;
+        let currentKeywords = '';
+        const pageSize = 10;
         
         function switchMode(mode) {
             currentMode = mode;
