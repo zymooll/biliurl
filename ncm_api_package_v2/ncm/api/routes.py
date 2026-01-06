@@ -364,43 +364,52 @@ async def generate_video_for_vrchat(
     # 🎬 优先尝试获取 MV（除非明确指定 mv=0）
     if mv:
         try:
-            print(f"🎥 尝试获取 MV: 歌曲ID={song_id}")
-            mv_url_api = f"{API_BASE_URL}mv/url?id={song_id}"
-            print(f"DEBUG: {mv_url_api}")
-            mv_response = retry_request(
-                requests.get,
-                mv_url_api,
-                max_retries=2,  # MV 检查失败可快速降级，不需要太多重试
-                timeout=5
+            song_detail = retry_request(
+                UserInteractive.getSongDetail,
+                str(song_id),
+                max_retries=2  # 缓存命中时重试次数少一些
             )
-            mv_data = mv_response.json()
-            print("DEBUG: ")
-            print(mv_data)
-            
-            # 检查 MV 是否存在且有效
-            if (mv_data.get("code") == 200 and 
-                mv_data.get("data") and 
-                mv_data["data"].get("url") and 
-                mv_data["data"].get("code") == 200):
-                
-                mv_url = mv_data["data"]["url"]
-                mv_size = mv_data["data"].get("size", 0)
-                mv_resolution = mv_data["data"].get("r", 0)
-                print(f"✅ 找到 MV！分辨率={mv_resolution}p, 大小={mv_size / 1024 / 1024:.2f}MB")
-                print(f"🔗 重定向到 MV: {mv_url[:100]}...")
-                
-                # 直接返回 MV 直链的重定向
-                return RedirectResponse(
-                    url=mv_url,
-                    status_code=302,
-                    headers={
-                        "Cache-Control": "public, max-age=3600"
-                    }
-                )
+            mv_id = song_detail.get("mv")
+            if mv_id == 0:
+              print(f"⚠️ MV 不存在，降级使用音频生成视频")
             else:
-                mv_code = mv_data.get("data", {}).get("code") if mv_data.get("data") else None
-                print(f"⚠️ MV 不存在 (code={mv_code})，降级使用音频生成视频")
-                
+              print(f"🎥 尝试获取 MV: 歌曲ID={mv_id}")
+              mv_url_api = f"{API_BASE_URL}mv/url?id={mv_id}"
+              print(f"DEBUG: {mv_url_api}")
+              mv_response = retry_request(
+                  requests.get,
+                  mv_url_api,
+                  max_retries=2,  # MV 检查失败可快速降级，不需要太多重试
+                  timeout=5
+              )
+              mv_data = mv_response.json()
+              print("DEBUG: ")
+              print(mv_data)
+              
+              # 检查 MV 是否存在且有效
+              if (mv_data.get("code") == 200 and 
+                  mv_data.get("data") and 
+                  mv_data["data"].get("url") and 
+                  mv_data["data"].get("code") == 200):
+                  
+                  mv_url = mv_data["data"]["url"]
+                  mv_size = mv_data["data"].get("size", 0)
+                  mv_resolution = mv_data["data"].get("r", 0)
+                  print(f"✅ 找到 MV！分辨率={mv_resolution}p, 大小={mv_size / 1024 / 1024:.2f}MB")
+                  print(f"🔗 重定向到 MV: {mv_url[:100]}...")
+                  
+                  # 直接返回 MV 直链的重定向
+                  return RedirectResponse(
+                      url=mv_url,
+                      status_code=302,
+                      headers={
+                          "Cache-Control": "public, max-age=3600"
+                      }
+                  )
+              else:
+                  mv_code = mv_data.get("data", {}).get("code") if mv_data.get("data") else None
+                  print(f"⚠️ MV 不存在 (code={mv_code})，降级使用音频生成视频")
+                  
         except Exception as e:
             print(f"⚠️ MV 获取失败: {e}，降级使用音频生成视频")
     else:
