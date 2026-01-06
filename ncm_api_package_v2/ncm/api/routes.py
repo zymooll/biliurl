@@ -63,8 +63,9 @@ def retry_request(func, *args, max_retries=3, timeout=10, **kwargs):
 def create_json_response(content, status_code=200):
     """创建 JSON 响应并移除 Content-Length 头，防止协议错误"""
     response = JSONResponse(content=content, status_code=status_code)
-    # 移除 Content-Length，让底层自动计算
-    response.headers.pop("content-length", None)
+    # 移除 Content-Length，让底层自动计算（使用 del 而不是 pop）
+    if "content-length" in response.headers:
+        del response.headers["content-length"]
     return response
 
 @router.get("/")
