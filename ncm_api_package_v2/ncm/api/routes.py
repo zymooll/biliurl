@@ -318,6 +318,39 @@ async def generate_video_for_vrchat(
     except (ValueError, TypeError):
         raise HTTPException(status_code=400, detail="无效的歌曲 ID")
 
+    # 🚀 优先检查缓存，避免不必要的上游请求
+    print(f"🔍 检查缓存: 歌曲ID={song_id}, 音质={level}, 模式={'简单' if simple else '完整'}")
+    cached_video = VideoGenerator._get_cached_video(song_id, level, with_lyrics=not simple)
+    if cached_video and os.path.exists(cached_video):
+        file_size = os.path.getsize(cached_video)
+        print(f"⚡ 缓存命中！直接返回视频文件 ({file_size / 1024 / 1024:.2f} MB)")
+        
+        # 获取歌曲名用于文件名（快速获取，不影响性能）
+        try:
+            song_detail = UserInteractive.getSongDetail(str(song_id))
+            if song_detail.get("code") == 200 and song_detail.get("songs"):
+                song_info = song_detail["songs"][0]
+                song_name = song_info.get("name", "未知歌曲")
+                artist_name = song_info.get("ar", [{}])[0].get("name", "未知歌手")
+            else:
+                song_name = f"Song_{song_id}"
+                artist_name = "Unknown"
+        except:
+            song_name = f"Song_{song_id}"
+            artist_name = "Unknown"
+        
+        return FileResponse(
+            cached_video,
+            media_type="video/mp4",
+            filename=f"{song_name} - {artist_name}.mp4",
+            headers={
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "public, max-age=86400"
+            }
+        )
+    
+    print(f"📥 缓存未命中，开始生成新视频...")
+    
     try:
         thread_count = threads if threads and threads > 0 else None
         # 1. 获取音频链接
