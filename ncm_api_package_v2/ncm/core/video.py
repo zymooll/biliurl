@@ -12,6 +12,8 @@ import requests
 import tempfile
 import subprocess
 import multiprocessing
+import uuid
+import threading
 from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
 
@@ -352,20 +354,27 @@ class VideoGenerator:
             if cached_video:
                 return cached_video
         
-        # 准备输出路径：使用 .tmp 后缀，完成后重命名（原子操作）
+        # 准备输出路径：使用 .tmp 后缀 + UUID，完成后重命名（原子操作）
         VideoGenerator._ensure_cache_dir()
+        
+        # 生成唯一标识符（线程安全）
+        unique_id = uuid.uuid4().hex[:8]
+        thread_id = threading.current_thread().ident
+        
         if song_id:
             cache_key = VideoGenerator._get_cache_key(song_id, level, with_lyrics=True)
             final_path = os.path.join(VideoGenerator.CACHE_DIR, f"{cache_key}.mp4")
-            output_path = f"{final_path}.tmp"  # 使用.tmp后缀
-            print(f"📝 缓存文件名: {cache_key}.mp4")
+            # 使用 UUID 避免多线程冲突
+            output_path = os.path.join(VideoGenerator.CACHE_DIR, f"{cache_key}_{unique_id}_{thread_id}.tmp")
+            print(f"📝 缓存文件名: {cache_key}.mp4 (临时ID: {unique_id})")
         else:
             # 如果没有song_id，使用临时文件
             final_path = None
-            output_path = os.path.join(tempfile.mkdtemp(), "output.mp4")
+            temp_base = tempfile.mkdtemp(prefix=f"ncm_video_{unique_id}_")
+            output_path = os.path.join(temp_base, "output.mp4")
         
-        # 创建临时目录用于中间文件
-        temp_dir = tempfile.mkdtemp()
+        # 创建临时目录用于中间文件（使用唯一前缀）
+        temp_dir = tempfile.mkdtemp(prefix=f"ncm_temp_{unique_id}_")
         
         try:
             # 1. 下载音频
@@ -510,11 +519,31 @@ class VideoGenerator:
             # 原子性重命名：.tmp -> .mp4（确保并发安全）
             if song_id and final_path:
                 try:
-                    os.rename(output_path, final_path)
-                    print(f"💾 视频已持久化存储: {final_path}")
+                    # 使用 os.replace 而不是 os.rename，更安全（即使目标文件存在也会原子替换）
+                    # 但在重命名前先检查是否有其他线程已经完成了
+                    if not os.path.exists(final_path):
+                        os.replace(output_path, final_path)
+                        print(f"💾 视频已持久化存储: {final_path}")
+                        output_path = final_path
+                    else:
+                        # 其他线程已经生成完成，删除当前的临时文件
+                        print(f"ℹ️ 其他线程已完成视频生成，使用已有文件")
+                        try:
+                            os.remove(output_path)
+                        except:
+                            pass
+                        output_path = final_path
+                except FileExistsError:
+                    # 竞争条件：其他线程已创建文件
+                    print(f"ℹ️ 检测到并发生成，使用已有文件")
+                    try:
+                        os.remove(output_path)
+                    except:
+                        pass
                     output_path = final_path
                 except Exception as e:
                     print(f"⚠️ 重命名失败: {e}")
+                    # 即使重命名失败，临时文件仍然可用
             
             # 清理临时文件
             try:
@@ -553,20 +582,27 @@ class VideoGenerator:
             if cached_video:
                 return cached_video
         
-        # 准备输出路径：使用 .tmp 后缀，完成后重命名（原子操作）
+        # 准备输出路径：使用 .tmp 后缀 + UUID，完成后重命名（原子操作）
         VideoGenerator._ensure_cache_dir()
+        
+        # 生成唯一标识符（线程安全）
+        unique_id = uuid.uuid4().hex[:8]
+        thread_id = threading.current_thread().ident
+        
         if song_id:
             cache_key = VideoGenerator._get_cache_key(song_id, level, with_lyrics=False)
             final_path = os.path.join(VideoGenerator.CACHE_DIR, f"{cache_key}.mp4")
-            output_path = f"{final_path}.tmp"  # 使用.tmp后缀
-            print(f"📝 缓存文件名: {cache_key}.mp4")
+            # 使用 UUID 避免多线程冲突
+            output_path = os.path.join(VideoGenerator.CACHE_DIR, f"{cache_key}_{unique_id}_{thread_id}.tmp")
+            print(f"📝 缓存文件名: {cache_key}.mp4 (临时ID: {unique_id})")
         else:
             # 如果没有song_id，使用临时文件
             final_path = None
-            output_path = os.path.join(tempfile.mkdtemp(), "output.mp4")
+            temp_base = tempfile.mkdtemp(prefix=f"ncm_video_{unique_id}_")
+            output_path = os.path.join(temp_base, "output.mp4")
         
-        # 创建临时目录用于中间文件
-        temp_dir = tempfile.mkdtemp()
+        # 创建临时目录用于中间文件（使用唯一前缀）
+        temp_dir = tempfile.mkdtemp(prefix=f"ncm_temp_{unique_id}_")
         
         try:
             # 下载音频
@@ -662,11 +698,31 @@ class VideoGenerator:
             # 原子性重命名：.tmp -> .mp4（确保并发安全）
             if song_id and final_path:
                 try:
-                    os.rename(output_path, final_path)
-                    print(f"💾 视频已持久化存储: {final_path}")
+                    # 使用 os.replace 而不是 os.rename，更安全（即使目标文件存在也会原子替换）
+                    # 但在重命名前先检查是否有其他线程已经完成了
+                    if not os.path.exists(final_path):
+                        os.replace(output_path, final_path)
+                        print(f"💾 视频已持久化存储: {final_path}")
+                        output_path = final_path
+                    else:
+                        # 其他线程已经生成完成，删除当前的临时文件
+                        print(f"ℹ️ 其他线程已完成视频生成，使用已有文件")
+                        try:
+                            os.remove(output_path)
+                        except:
+                            pass
+                        output_path = final_path
+                except FileExistsError:
+                    # 竞争条件：其他线程已创建文件
+                    print(f"ℹ️ 检测到并发生成，使用已有文件")
+                    try:
+                        os.remove(output_path)
+                    except:
+                        pass
                     output_path = final_path
                 except Exception as e:
                     print(f"⚠️ 重命名失败: {e}")
+                    # 即使重命名失败，临时文件仍然可用
             
             # 清理临时文件
             try:

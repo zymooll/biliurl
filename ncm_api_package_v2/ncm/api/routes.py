@@ -3,6 +3,8 @@ from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, HTML
 import requests
 import os
 import time
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import quote
 from ncm.core.login import LoginProtocol
@@ -16,6 +18,13 @@ from ncm.api.web_ui import get_web_ui_html
 router = APIRouter()
 login_handler = None
 API_BASE_URL = "http://localhost:3002/"
+
+# 创建线程池用于CPU密集型任务（如FFmpeg）
+# 默认使用CPU核心数，可以根据需要调整
+import multiprocessing
+MAX_WORKERS = multiprocessing.cpu_count()
+video_executor = ThreadPoolExecutor(max_workers=MAX_WORKERS, thread_name_prefix="VideoGen")
+print(f"🚀 视频生成线程池已初始化: {MAX_WORKERS} 个工作线程")
 
 def init_login_handler():
     global login_handler
@@ -838,13 +847,21 @@ async def generate_video_for_vrchat(
         if not cover_url:
             raise HTTPException(status_code=404, detail="无法获取封面图片")
         
-        # 3. 如果是简化模式，直接生成无字幕视频
+        # 3. 如果是简化模式，直接生成无字幕视频 - 在线程池中异步执行
         if simple:
-            print("⚡ 使用简化模式生成视频（无字幕）")
-            video_path = VideoGenerator.generate_video_simple(
-                audio_url, cover_url, 
-                use_gpu=use_gpu, threads=thread_count, gpu_device=gpu_device,
-                song_id=song_id, level=level
+            print("⚡ 使用简化模式生成视频（无字幕）- 使用线程池")
+            loop = asyncio.get_event_loop()
+            video_path = await loop.run_in_executor(
+                video_executor,
+                VideoGenerator.generate_video_simple,
+                audio_url,
+                cover_url,
+                None,
+                use_gpu,
+                thread_count,
+                gpu_device,
+                song_id,
+                level
             )
             # 视频已持久化存储，无需清理
             return FileResponse(
@@ -870,11 +887,19 @@ async def generate_video_for_vrchat(
         print(f"📄 歌词API响应: code={lyric_data.get('code')}")
         
         if lyric_data.get("code") != 200:
-            print(f"⚠️ 无法获取歌词 (code={lyric_data.get('code')})，使用简化模式")
-            video_path = VideoGenerator.generate_video_simple(
-                audio_url, cover_url, 
-                use_gpu=use_gpu, threads=thread_count, gpu_device=gpu_device,
-                song_id=song_id, level=level
+            print(f"⚠️ 无法获取歌词 (code={lyric_data.get('code')})，使用简化模式 - 使用线程池")
+            loop = asyncio.get_event_loop()
+            video_path = await loop.run_in_executor(
+                video_executor,
+                VideoGenerator.generate_video_simple,
+                audio_url,
+                cover_url,
+                None,
+                use_gpu,
+                thread_count,
+                gpu_device,
+                song_id,
+                level
             )
             # 视频已持久化存储，无需清理
             return FileResponse(
@@ -897,11 +922,19 @@ async def generate_video_for_vrchat(
         print(f"📝 歌词数据: lrc={'存在' if lrc else '空'} ({len(lrc) if lrc else 0} 字符), tlyric={'存在' if tlyric else '空'} ({len(tlyric) if tlyric else 0} 字符)")
         
         if not lrc:
-            print("⚠️ 歌词内容为空，使用简化模式")
-            video_path = VideoGenerator.generate_video_simple(
-                audio_url, cover_url, 
-                use_gpu=use_gpu, threads=thread_count, gpu_device=gpu_device,
-                song_id=song_id, level=level
+            print("⚠️ 歌词内容为空，使用简化模式 - 使用线程池")
+            loop = asyncio.get_event_loop()
+            video_path = await loop.run_in_executor(
+                video_executor,
+                VideoGenerator.generate_video_simple,
+                audio_url,
+                cover_url,
+                None,
+                use_gpu,
+                thread_count,
+                gpu_device,
+                song_id,
+                level
             )
             # 视频已持久化存储，无需清理
             return FileResponse(
@@ -914,20 +947,23 @@ async def generate_video_for_vrchat(
                 }
             )
         
-        # 5. 生成完整视频（带字幕）
-        print("🎬 生成完整视频（带字幕）")
-        video_path = VideoGenerator.generate_video(
-            audio_url=audio_url,
-            cover_url=cover_url,
-            lyrics_lrc=lrc,
-            translation_lrc=tlyric,
-            song_name=song_name,
-            artist=artist_name,
-            use_gpu=use_gpu,
-            threads=thread_count,
-            gpu_device=gpu_device,
-            song_id=song_id,
-            level=level
+        # 5. 生成完整视频（带字幕）- 在线程池中异步执行
+        print("🎬 生成完整视频（带字幕）- 使用线程池")
+        loop = asyncio.get_event_loop()
+        video_path = await loop.run_in_executor(
+            video_executor,
+            VideoGenerator.generate_video,
+            audio_url,
+            cover_url,
+            lrc,
+            tlyric,
+            song_name,
+            artist_name,
+            use_gpu,
+            thread_count,
+            gpu_device,
+            song_id,
+            level
         )
         
         # 6. 返回视频文件
