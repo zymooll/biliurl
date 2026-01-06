@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Query, Response, BackgroundTasks
 from fastapi.responses import JSONResponse, RedirectResponse, FileResponse
 import requests
 import os
+import time
 from pathlib import Path
 from urllib.parse import quote
 from ncm.core.login import LoginProtocol
@@ -17,6 +18,45 @@ login_handler = None
 def init_login_handler():
     global login_handler
     login_handler = LoginProtocol()
+
+def retry_request(func, *args, max_retries=3, timeout=10, **kwargs):
+    """
+    重试机制包装器
+    
+    参数:
+        func: 要执行的函数
+        max_retries: 最大重试次数
+        timeout: 超时时间（秒）
+        *args, **kwargs: 传递给func的参数
+    
+    返回:
+        函数执行结果
+    """
+    last_error = None
+    for attempt in range(max_retries):
+        try:
+            if attempt > 0:
+                wait_time = min(2 ** attempt, 5)  # 指数退避，最多5秒
+                print(f"🔄 重试第 {attempt + 1}/{max_retries} 次，等待 {wait_time}秒...")
+                time.sleep(wait_time)
+            
+            # 如果是 requests 请求，添加 timeout
+            if func == requests.get or func == requests.post:
+                kwargs.setdefault('timeout', timeout)
+            
+            result = func(*args, **kwargs)
+            return result
+            
+        except (requests.Timeout, requests.ConnectionError, requests.RequestException) as e:
+            last_error = e
+            print(f"⚠️ 请求失败 (尝试 {attempt + 1}/{max_retries}): {type(e).__name__} - {str(e)[:100]}")
+            if attempt == max_retries - 1:
+                raise Exception(f"请求失败，已重试 {max_retries} 次: {str(last_error)}")
+        except Exception as e:
+            # 其他异常直接抛出，不重试
+            raise e
+    
+    raise Exception(f"请求失败: {str(last_error)}")
 
 def create_json_response(content, status_code=200):
     """创建 JSON 响应并移除 Content-Length 头，防止协议错误"""
@@ -327,7 +367,11 @@ async def generate_video_for_vrchat(
         
         # 获取歌曲名用于文件名（快速获取，不影响性能）
         try:
-            song_detail = UserInteractive.getSongDetail(str(song_id))
+            song_detail = retry_request(
+                UserInteractive.getSongDetail,
+                str(song_id),
+                max_retries=2  # 缓存命中时重试次数少一些
+            )
             if song_detail.get("code") == 200 and song_detail.get("songs"):
                 song_info = song_detail["songs"][0]
                 song_name = song_info.get("name", "未知歌曲")
@@ -353,16 +397,24 @@ async def generate_video_for_vrchat(
     
     try:
         thread_count = threads if threads and threads > 0 else None
-        # 1. 获取音频链接
+        # 1. 获取音频链接（带重试）
         cookie = load_cookie()
-        audio_result = UserInteractive.getDownloadUrl(song_id, level, unblock, cookie)
+        audio_result = retry_request(
+            UserInteractive.getDownloadUrl,
+            song_id, level, unblock, cookie,
+            max_retries=3
+        )
         if not audio_result["success"] or not audio_result.get("url"):
             raise HTTPException(status_code=404, detail="无法获取歌曲链接")
         
         audio_url = audio_result["url"]
         
-        # 2. 获取歌曲详情（封面）
-        song_detail = UserInteractive.getSongDetail(str(song_id))
+        # 2. 获取歌曲详情（封面）- 带重试
+        song_detail = retry_request(
+            UserInteractive.getSongDetail,
+            str(song_id),
+            max_retries=3
+        )
         if song_detail.get("code") != 200:
             raise HTTPException(status_code=404, detail="无法获取歌曲详情")
         
@@ -397,10 +449,15 @@ async def generate_video_for_vrchat(
                 }
             )
         
-        # 4. 获取歌词
+        # 4. 获取歌词（带重试）
         lyric_url = f"https://lyrics.0061226.xyz/api/lyric?id={song_id}"
         print(f"🔍 请求歌词: {lyric_url}")
-        lyric_response = requests.get(lyric_url, timeout=10)
+        lyric_response = retry_request(
+            requests.get,
+            lyric_url,
+            max_retries=3,
+            timeout=10
+        )
         lyric_data = lyric_response.json()
         print(f"📄 歌词API响应: code={lyric_data.get('code')}")
         
