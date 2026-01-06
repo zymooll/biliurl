@@ -371,7 +371,7 @@ async def generate_video_for_vrchat(
             )
             print("DEBUG: ")
             print(song_detail)
-            mv_id = song_detail.get("mv")
+            mv_id = song_detail['songs'][0]['mv']
             if mv_id == 0:
               print(f"⚠️ MV 不存在，降级使用音频生成视频")
             else:
