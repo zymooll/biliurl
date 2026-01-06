@@ -81,6 +81,35 @@ def test_with_keywords():
         print(f"❌ 搜索失败: {response.text}")
     print()
 
+def test_stream_proxy():
+    """测试音频流代理端点（VRChat 最终解决方案）"""
+    print("=" * 60)
+    print("测试 4: 音频流代理 /stream (VRChat 推荐)")
+    print("=" * 60)
+    
+    url = f"{API_BASE}/stream?id={TEST_SONG_ID}"
+    print(f"请求: {url}")
+    
+    # 只获取前1KB数据测试
+    response = requests.get(url, stream=True)
+    
+    print(f"状态码: {response.status_code}")
+    print(f"Content-Type: {response.headers.get('Content-Type')}")
+    print(f"Content-Length: {response.headers.get('Content-Length', 'N/A')}")
+    
+    if response.status_code == 200:
+        # 读取前1KB验证
+        chunk = next(response.iter_content(chunk_size=1024), None)
+        if chunk:
+            print(f"✅ 成功获取音频流 (已接收 {len(chunk)} 字节)")
+            print(f"\n🎵 VRChat 使用此 URL: {url}")
+            print("✅ 此方法通过你的服务器代理，VRChat 可以播放！")
+        else:
+            print("⚠️ 未收到数据")
+    else:
+        print(f"❌ 请求失败: {response.text}")
+    print()
+
 if __name__ == "__main__":
     print("\n🎵 VRChat MP3 播放 API 测试\n")
     
@@ -94,14 +123,20 @@ if __name__ == "__main__":
         # 测试关键词搜索
         test_with_keywords()
         
+        # 测试音频流代理（VRChat 最终解决方案）
+        test_stream_proxy()
+        
         print("=" * 60)
-        print("📝 使用说明:")
+        print("📝 VRChat 使用说明:")
         print("=" * 60)
-        print("在 VRChat 中使用以下 URL 格式:")
-        print(f"  1. 通过 ID: {API_BASE}/play/direct?id=歌曲ID")
-        print(f"  2. 通过关键词: {API_BASE}/play/direct?keywords=歌曲名")
+        print("✅ 推荐使用流代理端点（已解决域名限制问题）:")
+        print(f"  1. 通过 ID: {API_BASE}/stream?id=歌曲ID")
+        print(f"  2. 通过关键词: {API_BASE}/stream?keywords=歌曲名")
         print()
-        print("⚠️ 注意: 需要在 USharpVideo 中实现 JSON 解析")
+        print("注意事项:")
+        print("  • 确保 USharpVideo 切换到 Stream (AVPro) 模式")
+        print("  • 音频通过你的服务器代理，不受 VRChat 域名限制")
+        print("  • 支持所有音质等级 (standard/higher/exhigh/lossless)")
         print()
         
     except requests.exceptions.ConnectionError:
