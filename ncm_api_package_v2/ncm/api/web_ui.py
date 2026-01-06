@@ -593,35 +593,71 @@ HTML_TEMPLATE = """
             await playSong(parseInt(songId), '歌曲ID: ' + songId, '');
         }
         
-        async function searchSongs() {
+        async function searchSongs(page = 1) {
             const keywords = document.getElementById('searchInput').value.trim();
             if (!keywords) {
                 alert('请输入歌曲名或歌手名');
                 return;
             }
             
+            currentKeywords = keywords;
+            currentPage = page;
+            
             const resultsDiv = document.getElementById('results');
             const songListDiv = document.getElementById('songList');
             const resultsTitle = document.getElementById('resultsTitle');
+            const paginationDiv = document.getElementById('pagination');
             
             resultsDiv.style.display = 'block';
             resultsTitle.textContent = '搜索结果';
             songListDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>正在搜索...</p></div>';
+            paginationDiv.style.display = 'none';
             
             try {
-                console.log('调用 /search API:', keywords);
-                const response = await fetch(`/search?keywords=${encodeURIComponent(keywords)}`);
+                const offset = (page - 1) * pageSize;
+                console.log(`调用 /search API: ${keywords}, 页码=${page}, offset=${offset}`);
+                const response = await fetch(`/search?keywords=${encodeURIComponent(keywords)}&limit=${pageSize}&offset=${offset}`);
                 const data = await response.json();
                 
                 if (data.code === 200 && data.songs && data.songs.length > 0) {
                     currentResults = data.songs;
                     displayResults(currentResults);
+                    
+                    // 显示翻页控件
+                    paginationDiv.style.display = 'flex';
+                    updatePagination(data.songs.length);
                 } else {
                     songListDiv.innerHTML = '<div class="empty"><div class="empty-icon">😢</div><p>未找到相关歌曲</p></div>';
+                    paginationDiv.style.display = 'none';
                 }
             } catch (error) {
                 songListDiv.innerHTML = `<div class="error">搜索失败: ${error.message}</div>`;
+                paginationDiv.style.display = 'none';
             }
+        }
+        
+        function updatePagination(resultCount) {
+            const btnPrev = document.getElementById('btnPrev');
+            const btnNext = document.getElementById('btnNext');
+            const pageInfo = document.getElementById('pageInfo');
+            
+            pageInfo.textContent = `第 ${currentPage} 页`;
+            
+            // 如果是第一页，禁用上一页按钮
+            btnPrev.disabled = currentPage === 1;
+            
+            // 如果当前页结果少于 pageSize，说明没有下一页了
+            btnNext.disabled = resultCount < pageSize;
+        }
+        
+        async function prevPage() {
+            if (currentPage > 1) {
+                await searchSongs(currentPage - 1);
+            }
+        }
+        
+        async function nextPage() {
+            await searchSongs(currentPage + 1);
         }
         
         function displayResults(songs) {
@@ -714,8 +750,8 @@ HTML_TEMPLATE = """
             }
             videoElement.load();
             
-            // 滚动到播放器
-            videoPlayerDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            // 滚动到播放器（就在搜索框下方）
+            videoPlayerDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
         
         function copyApiUrl() {
