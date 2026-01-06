@@ -495,7 +495,7 @@ HTML_TEMPLATE = """
             }
             
             const videoPlayerDiv = document.getElementById('videoPlayer');
-            const videoElement = document.getElementById('videoElement');
+            const videoElement = document.getElementById('video');
             
             // 构建参数
             const params = new URLSearchParams();
