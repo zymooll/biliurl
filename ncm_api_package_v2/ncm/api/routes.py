@@ -14,9 +14,7 @@ from ncm.utils.database import db
 
 router = APIRouter()
 login_handler = None
-
-# API 配置 - 上游服务地址
-API_BASE_URL = os.getenv("NCM_API_BASE_URL", "http://localhost:3002")
+API_BASE_URL = "http://localhost:3002/"
 
 def init_login_handler():
     global login_handler
@@ -368,6 +366,7 @@ async def generate_video_for_vrchat(
         try:
             print(f"🎥 尝试获取 MV: 歌曲ID={song_id}")
             mv_url_api = f"{API_BASE_URL}/mv/url?id={song_id}"
+            print(f"DEBUG: {mv_url_api}")
             mv_response = retry_request(
                 requests.get,
                 mv_url_api,
