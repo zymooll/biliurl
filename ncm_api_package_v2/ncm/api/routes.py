@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query, Response, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Query, Response, BackgroundTasks, Cookie, Header
 from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, HTMLResponse, StreamingResponse
 import requests
 import os
@@ -13,7 +13,8 @@ from ncm.core.lyrics import process_lyrics_matching
 from ncm.core.video import VideoGenerator
 from ncm.utils.cookie import load_cookie, save_cookie
 from ncm.utils.database import db
-from ncm.api.web_ui import get_web_ui_html
+from ncm.utils.access_password import AccessPasswordManager
+from ncm.api.web_ui import get_web_ui_html, get_login_page_html
 
 router = APIRouter()
 login_handler = None
@@ -77,10 +78,62 @@ def create_json_response(content, status_code=200):
         del response.headers["content-length"]
     return response
 
+def verify_access_password(access_password: str = Cookie(None)) -> bool:
+    """验证访问密码"""
+    if not access_password:
+        return False
+    return AccessPasswordManager.verify_password(access_password)
+
 @router.get("/")
-async def root():
-    """返回可视化Web界面"""
+async def root(access_password: str = Cookie(None)):
+    """返回可视化Web界面（需要密码验证）"""
+    if not verify_access_password(access_password):
+        return HTMLResponse(content=get_login_page_html())
     return HTMLResponse(content=get_web_ui_html())
+
+@router.post("/auth/verify")
+async def verify_password(password: str):
+    """验证访问密码"""
+    if AccessPasswordManager.verify_password(password):
+        response = create_json_response({"code": 200, "message": "验证成功"})
+        # 设置 Cookie，有效期30天
+        response.set_cookie(
+            key="access_password",
+            value=password,
+            max_age=30 * 24 * 60 * 60,  # 30天
+            httponly=True,
+            samesite="lax"
+        )
+        return response
+    else:
+        return create_json_response({"code": 401, "message": "密码错误"}, 401)
+
+@router.post("/auth/refresh")
+async def refresh_password(current_password: str, access_password: str = Cookie(None)):
+    """刷新访问密码（需要提供当前密码）"""
+    # 验证当前密码
+    if not AccessPasswordManager.verify_password(current_password):
+        raise HTTPException(status_code=403, detail="当前密码错误")
+    
+    # 生成新密码
+    new_password = AccessPasswordManager.refresh_password()
+    if new_password:
+        print(f"🔐 新的访问密码: {new_password}")
+        return create_json_response({
+            "code": 200,
+            "message": "密码已刷新",
+            "new_password": new_password
+        })
+    else:
+        raise HTTPException(status_code=500, detail="密码刷新失败")
+
+@router.get("/auth/check")
+async def check_auth(access_password: str = Cookie(None)):
+    """检查访问密码是否有效"""
+    if verify_access_password(access_password):
+        return create_json_response({"code": 200, "message": "已授权", "authorized": True})
+    else:
+        return create_json_response({"code": 401, "message": "未授权", "authorized": False}, 401)
 
 @router.get("/api")
 async def api_info():
@@ -750,10 +803,11 @@ async def generate_video_for_vrchat(
     use_gpu: bool = True,
     threads: int | None = None,
     gpu_device: str | None = None,
-    mv: bool = True
+    mv: bool = True,
+    access_password: str = Cookie(None)
 ):
     """
-    13. 生成MP4视频 (VRChat USharpVideo专用)
+    13. 生成MP4视频 (VRChat USharpVideo专用) - **需要访问密码**
     
     参数:
         id: 歌曲ID
@@ -765,10 +819,15 @@ async def generate_video_for_vrchat(
         threads: 手动指定FFmpeg线程数，留空让FFmpeg自行分配
         gpu_device: Linux VAAPI 设备路径，例如 /dev/dri/renderD128
         mv: 是否优先尝试获取MV（默认True，设为False跳过MV检查）
+        access_password: 访问密码（通过Cookie传递）
         
     返回:
         MP4视频文件流或MV直链重定向
     """
+    # 验证访问密码
+    if not verify_access_password(access_password):
+        raise HTTPException(status_code=403, detail="需要访问密码。请先在Web UI中登录。")
+    
     if not id and not keywords:
         raise HTTPException(status_code=400, detail="必须提供 id 或 keywords 参数")
 

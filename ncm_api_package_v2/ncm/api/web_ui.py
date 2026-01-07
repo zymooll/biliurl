@@ -998,6 +998,25 @@ HTML_TEMPLATE = r"""
             <div id="logoutSection" style="display: none; margin-top: 20px;">
                 <button class="btn btn-secondary" onclick="logout()" style="width: 100%;">退出登录</button>
             </div>
+            
+            <!-- Access Password Management -->
+            <div style="margin-top: 30px; padding-top: 30px; border-top: 1px solid var(--border-color);">
+                <h3 style="margin-bottom: 15px; font-size: 1.2rem; color: var(--text-primary);">访问密码管理</h3>
+                <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 15px;">
+                    刷新访问密码后，所有用户需要使用新密码才能访问系统
+                </p>
+                <div class="input-group" style="flex-direction: column; gap: 15px;">
+                    <input type="password" id="currentPasswordForRefresh" class="input" placeholder="输入当前访问密码以确认身份">
+                    <button class="btn btn-primary" onclick="refreshAccessPassword()" style="background: #f59e0b;">
+                        🔄 刷新访问密码
+                    </button>
+                </div>
+                <div id="newPasswordDisplay" style="display: none; margin-top: 15px; padding: 15px; background: #fef3c7; border: 2px solid #f59e0b; border-radius: 8px;">
+                    <p style="font-weight: 600; margin-bottom: 8px; color: #92400e;">🔐 新的访问密码：</p>
+                    <p id="newPasswordText" style="font-size: 1.2rem; font-family: monospace; color: #1e40af; word-break: break-all;"></p>
+                    <p style="margin-top: 10px; font-size: 0.85rem; color: #92400e;">⚠️ 请立即保存此密码！关闭后将无法再次查看。</p>
+                </div>
+            </div>
         </div>
 
         <!-- Search Card -->
@@ -1722,6 +1741,50 @@ HTML_TEMPLATE = r"""
             }
         }
 
+        async function refreshAccessPassword() {
+            const currentPassword = document.getElementById('currentPasswordForRefresh').value.trim();
+            const newPasswordDisplay = document.getElementById('newPasswordDisplay');
+            const newPasswordText = document.getElementById('newPasswordText');
+            
+            if (!currentPassword) {
+                alert('请输入当前访问密码');
+                return;
+            }
+            
+            if (!confirm('⚠️ 确定要刷新访问密码吗？\n\n刷新后，所有用户（包括您）都需要使用新密码重新登录系统。')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/auth/refresh?current_password=${encodeURIComponent(currentPassword)}`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                if (data.code === 200) {
+                    // 显示新密码
+                    newPasswordText.textContent = data.new_password;
+                    newPasswordDisplay.style.display = 'block';
+                    
+                    // 清空输入框
+                    document.getElementById('currentPasswordForRefresh').value = '';
+                    
+                    alert('✅ 访问密码已刷新！\n\n请立即复制并保存新密码。\n5秒后将自动跳转到登录页面。');
+                    
+                    // 5秒后跳转到登录页面
+                    setTimeout(() => {
+                        // 清除当前的访问密码 cookie
+                        document.cookie = 'access_password=; path=/; max-age=0';
+                        window.location.href = '/';
+                    }, 5000);
+                } else {
+                    alert('刷新失败：' + (data.message || data.detail || '当前密码错误'));
+                }
+            } catch (error) {
+                alert('刷新失败：' + error.message);
+            }
+        }
+
         window.onload = function() {
             initTheme();
             switchMode('search');
@@ -1746,3 +1809,275 @@ HTML_TEMPLATE = r"""
 def get_web_ui_html():
     """返回Web UI的HTML内容"""
     return HTML_TEMPLATE
+
+def get_login_page_html():
+    """返回访问密码登录页面"""
+    return r"""
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>访问验证 - NCM Video Service</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .login-container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+            width: 100%;
+            max-width: 400px;
+            animation: slideIn 0.5s ease;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .logo {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .logo h1 {
+            font-size: 28px;
+            color: #333;
+            margin-bottom: 8px;
+        }
+        
+        .logo p {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+            font-size: 14px;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: all 0.3s;
+            outline: none;
+        }
+        
+        .form-group input:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 10px;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+        
+        .btn:active {
+            transform: translateY(0);
+        }
+        
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .error-message {
+            background: #fee;
+            border: 1px solid #fcc;
+            color: #c33;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            display: none;
+            animation: shake 0.5s;
+        }
+        
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-10px); }
+            75% { transform: translateX(10px); }
+        }
+        
+        .info-message {
+            background: #e3f2fd;
+            border: 1px solid #90caf9;
+            color: #1976d2;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 20px;
+            font-size: 13px;
+            text-align: center;
+        }
+        
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 0.8s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="logo">
+            <h1>🎵 NCM Video Service</h1>
+            <p>请输入访问密码</p>
+        </div>
+        
+        <div id="errorMessage" class="error-message"></div>
+        
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="password">访问密码</label>
+                <input 
+                    type="password" 
+                    id="password" 
+                    name="password" 
+                    placeholder="请输入访问密码"
+                    required
+                    autocomplete="off"
+                >
+            </div>
+            
+            <button type="submit" class="btn" id="submitBtn">
+                <span id="btnText">进入系统</span>
+            </button>
+        </form>
+        
+        <div class="info-message">
+            💡 默认密码：<strong>ncm2024</strong><br>
+            管理员可通过配置文件修改密码
+        </div>
+    </div>
+    
+    <script>
+        const form = document.getElementById('loginForm');
+        const passwordInput = document.getElementById('password');
+        const submitBtn = document.getElementById('submitBtn');
+        const btnText = document.getElementById('btnText');
+        const errorMessage = document.getElementById('errorMessage');
+        
+        // 自动聚焦密码输入框
+        passwordInput.focus();
+        
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const password = passwordInput.value.trim();
+            if (!password) {
+                showError('请输入密码');
+                return;
+            }
+            
+            // 显示加载状态
+            submitBtn.disabled = true;
+            btnText.innerHTML = '<span class="loading"></span>验证中...';
+            hideError();
+            
+            try {
+                const response = await fetch('/auth/verify', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `password=${encodeURIComponent(password)}`
+                });
+                
+                const data = await response.json();
+                
+                if (data.code === 200) {
+                    btnText.textContent = '✅ 验证成功！';
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 500);
+                } else {
+                    showError(data.message || '密码错误，请重试');
+                    submitBtn.disabled = false;
+                    btnText.textContent = '进入系统';
+                    passwordInput.value = '';
+                    passwordInput.focus();
+                }
+            } catch (error) {
+                showError('网络错误，请重试');
+                submitBtn.disabled = false;
+                btnText.textContent = '进入系统';
+            }
+        });
+        
+        function showError(message) {
+            errorMessage.textContent = '❌ ' + message;
+            errorMessage.style.display = 'block';
+        }
+        
+        function hideError() {
+            errorMessage.style.display = 'none';
+        }
+        
+        // Enter键提交
+        passwordInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                form.dispatchEvent(new Event('submit'));
+            }
+        });
+    </script>
+</body>
+</html>
+"""
