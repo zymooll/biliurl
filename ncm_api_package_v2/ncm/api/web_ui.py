@@ -945,10 +945,10 @@ HTML_TEMPLATE = """
 
             <!-- Login Method Selector -->
             <div class="login-methods">
-                <button class="login-method-btn active" onclick="selectLoginMethod('qr')">扫码登录</button>
-                <button class="login-method-btn" onclick="selectLoginMethod('sms')">短信登录</button>
-                <button class="login-method-btn" onclick="selectLoginMethod('password')">密码登录</button>
-                <button class="login-method-btn" onclick="selectLoginMethod('cookie')">导入Cookie</button>
+                <button class="login-method-btn active" onclick="selectLoginMethod('qr', event)">扫码登录</button>
+                <button class="login-method-btn" onclick="selectLoginMethod('sms', event)">短信登录</button>
+                <button class="login-method-btn" onclick="selectLoginMethod('password', event)">密码登录</button>
+                <button class="login-method-btn" onclick="selectLoginMethod('cookie', event)">导入Cookie</button>
             </div>
 
             <!-- QR Code Login -->
@@ -1509,7 +1509,7 @@ HTML_TEMPLATE = """
             }
         }
 
-        function selectLoginMethod(method) {
+        function selectLoginMethod(method, event) {
             // Hide all sections
             document.getElementById('qrLoginSection').style.display = 'none';
             document.getElementById('smsLoginSection').style.display = 'none';
@@ -1522,7 +1522,9 @@ HTML_TEMPLATE = """
             });
             
             // Show selected section and mark button as active
-            event.target.classList.add('active');
+            if (event && event.target) {
+                event.target.classList.add('active');
+            }
             
             if (method === 'qr') {
                 document.getElementById('qrLoginSection').style.display = 'block';
