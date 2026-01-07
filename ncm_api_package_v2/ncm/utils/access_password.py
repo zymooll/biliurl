@@ -40,6 +40,7 @@ class AccessPasswordManager:
                 password_hash = AccessPasswordManager._hash_password(DEFAULT_ACCESS_PASSWORD)
                 data = {
                     "password_hash": password_hash,
+                    "salt_version": "v2",  # 标记hash版本
                     "created_at": "initialized"
                 }
                 with open(ACCESS_PASSWORD_FILE, "w", encoding="utf-8") as f:
@@ -48,6 +49,22 @@ class AccessPasswordManager:
                 print(f"🔐 访问密码已初始化，默认密码: {DEFAULT_ACCESS_PASSWORD}")
                 return password_hash
             else:
+                # 检查是否需要迁移旧版本hash
+                try:
+                    with open(ACCESS_PASSWORD_FILE, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        # 如果没有salt_version标记，说明是旧版本，需要重新生成
+                        if "salt_version" not in data or data.get("salt_version") != "v2":
+                            print(f"⚠️ 检测到旧版本密码格式，正在迁移...")
+                            # 删除旧文件，重新初始化
+                            os.remove(ACCESS_PASSWORD_FILE)
+                            return AccessPasswordManager.initialize()
+                except Exception as e:
+                    print(f"❌ 读取密码文件失败: {e}，重新初始化...")
+                    if os.path.exists(ACCESS_PASSWORD_FILE):
+                        os.remove(ACCESS_PASSWORD_FILE)
+                    return AccessPasswordManager.initialize()
+                
                 # 加载现有密码
                 return AccessPasswordManager.load_password_hash()
     
@@ -106,6 +123,7 @@ class AccessPasswordManager:
                 password_hash = AccessPasswordManager._hash_password(new_password)
                 data = {
                     "password_hash": password_hash,
+                    "salt_version": "v2",  # 标记hash版本
                     "updated_at": "refreshed"
                 }
                 with open(ACCESS_PASSWORD_FILE, "w", encoding="utf-8") as f:
