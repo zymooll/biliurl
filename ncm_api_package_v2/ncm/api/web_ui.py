@@ -650,6 +650,24 @@ HTML_TEMPLATE = """
             display: block;
         }
 
+        .video-info-panel {
+            background: var(--card-bg);
+            padding: 20px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        [data-theme="dark"] .video-info-panel {
+            background: rgba(17, 17, 17, 0.9);
+        }
+
+        [data-theme="light"] .video-info-panel {
+            background: rgba(255, 255, 255, 0.9);
+        }
+
+        .video-info-panel h3 {
+            color: var(--text-primary);
+        }
+
         /* Floating Video Window */
         .floating-video {
             position: fixed;
@@ -1025,7 +1043,7 @@ HTML_TEMPLATE = """
         <!-- Player Card -->
         <div id="videoPlayer" class="video-container">
             <video id="video" controls autoplay></video>
-            <div style="background: white; padding: 20px;">
+            <div class="video-info-panel">
                 <h3 style="font-size: 1rem; margin-bottom: 10px;">API Integration</h3>
                 <div class="api-tools">
                     <label style="font-size: 0.8rem; font-weight: 600;">Request URL</label>
