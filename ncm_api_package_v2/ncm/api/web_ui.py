@@ -70,16 +70,16 @@ HTML_TEMPLATE = r"""
             min-height: 100vh;
             display: flex;
             flex-direction: column;
-            align-items: center;
-            padding: 40px 20px;
+            align-items: stretch;
+            padding: 20px 10px;
             transition: background-color 0.3s ease, color 0.3s ease;
             position: relative;
         }
 
         .container {
             width: 100%;
-            max-width: 95%;
-            margin: 0 auto;
+            max-width: none;
+            margin: 0;
             padding: 0;
             padding-bottom: 80px; /* Prevent content from being hidden by floating tabs */
         }
