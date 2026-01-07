@@ -78,8 +78,9 @@ HTML_TEMPLATE = r"""
 
         .container {
             width: 100%;
-            max-width: 1200px;
+            max-width: 1600px;
             margin: 0 auto;
+            padding: 0 20px;
             padding-bottom: 80px; /* Prevent content from being hidden by floating tabs */
         }
 
@@ -1199,9 +1200,9 @@ HTML_TEMPLATE = r"""
                 btnDirect.classList.add('active');
                 searchCard.style.display = 'block';
                 tabs.setAttribute('data-active', 'direct');
-                searchInput.placeholder = '输入歌曲 ID (例如: 1330944279)';
+                searchInput.placeholder = '输入歌曲ID或网易云音乐链接 (例如: 483242395 或 https://music.163.com/song?id=483242395)';
                 actionButton.innerHTML = '播放歌曲';
-                searchInput.type = 'number';
+                searchInput.type = 'text';  // 改为text类型以接受URL
                 searchInput.value = '';
                 searchInput.focus();
             } else if (mode === 'login') {
@@ -1221,9 +1222,36 @@ HTML_TEMPLATE = r"""
         }
         
         async function directPlay() {
-            const songId = document.getElementById('searchInput').value.trim();
-            if (!songId || isNaN(songId)) {
-                alert('请输入有效的歌曲ID（纯数字）');
+            const input = document.getElementById('searchInput').value.trim();
+            if (!input) {
+                alert('请输入歌曲ID或网易云音乐链接');
+                return;
+            }
+            
+            // 尝试从URL中提取ID
+            let songId = input;
+            
+            // 匹配各种格式的URL
+            // https://music.163.com/song?id=483242395&userid=1646867891
+            // music.163.com/song?id=483242395
+            const urlPatterns = [
+                /[?&]id=(\d+)/,           // 匹配 ?id=数字 或 &id=数字
+                /song\/(\d+)/,            // 匹配 song/数字
+                /^(\d+)$/                 // 纯数字
+            ];
+            
+            let matched = false;
+            for (const pattern of urlPatterns) {
+                const match = input.match(pattern);
+                if (match) {
+                    songId = match[1];
+                    matched = true;
+                    break;
+                }
+            }
+            
+            if (!matched || isNaN(songId)) {
+                alert('无法识别的格式。\n\n支持格式：\n- 纯数字ID: 483242395\n- 完整URL: https://music.163.com/song?id=483242395\n- 简化URL: music.163.com/song?id=483242395');
                 return;
             }
             
