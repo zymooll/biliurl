@@ -1463,15 +1463,20 @@ HTML_TEMPLATE = r"""
                     statusDiv.className = 'login-status success';
                     statusText.textContent = `✅ 已登录：${data.profile.nickname} (UID: ${data.account.id})`;
                     logoutSection.style.display = 'block';
+                    console.log('登录状态已更新：', data.profile.nickname);
+                    return true; // 返回登录成功状态
                 } else {
                     statusDiv.className = 'login-status';
                     statusText.textContent = '未登录，请选择登录方式';
                     logoutSection.style.display = 'none';
+                    return false;
                 }
             } catch (error) {
+                console.error('检查登录状态失败：', error);
                 statusDiv.className = 'login-status';
                 statusText.textContent = '未登录，请选择登录方式';
                 logoutSection.style.display = 'none';
+                return false;
             }
         }
 
@@ -1555,11 +1560,11 @@ HTML_TEMPLATE = r"""
                             qrTip.style.color = '#0070f3';
                         } else if (checkData.code === 803) {
                             clearInterval(qrCheckInterval);
-                            qrTip.textContent = '✅ 登录成功！';
+                            qrTip.textContent = '✅ 登录成功！正在更新状态...';
                             qrTip.style.color = '#10b981';
-                            setTimeout(() => {
-                                checkLoginStatus();
-                            }, 1000);
+                            // 立即检查登录状态
+                            await checkLoginStatus();
+                            qrTip.textContent = '✅ 登录成功！';
                         }
                     } catch (error) {
                         console.error('检查二维码状态失败:', error);
@@ -1628,8 +1633,12 @@ HTML_TEMPLATE = r"""
                 const data = await response.json();
                 
                 if (data.code === 200) {
-                    alert('登录成功！');
-                    checkLoginStatus();
+                    const success = await checkLoginStatus();
+                    if (success) {
+                        alert('✅ 登录成功！Cookie 已同步到所有线程');
+                    } else {
+                        alert('登录成功，但状态更新失败，请刷新页面');
+                    }
                 } else {
                     alert('登录失败：' + (data.message || '验证码错误'));
                 }
@@ -1652,8 +1661,12 @@ HTML_TEMPLATE = r"""
                 const data = await response.json();
                 
                 if (data.code === 200) {
-                    alert('登录成功！');
-                    checkLoginStatus();
+                    const success = await checkLoginStatus();
+                    if (success) {
+                        alert('✅ 登录成功！Cookie 已同步到所有线程');
+                    } else {
+                        alert('登录成功，但状态更新失败，请刷新页面');
+                    }
                 } else {
                     alert('登录失败：' + (data.message || '账号或密码错误'));
                 }
@@ -1675,8 +1688,12 @@ HTML_TEMPLATE = r"""
                 const data = await response.json();
                 
                 if (data.code === 200) {
-                    alert('Cookie 导入成功！');
-                    checkLoginStatus();
+                    const success = await checkLoginStatus();
+                    if (success) {
+                        alert('✅ Cookie 导入成功！已同步到所有线程');
+                    } else {
+                        alert('Cookie 已导入，但状态更新失败，请刷新页面');
+                    }
                 } else {
                     alert('导入失败：' + (data.message || '未知错误'));
                 }

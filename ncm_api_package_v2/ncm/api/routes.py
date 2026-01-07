@@ -119,6 +119,10 @@ async def check_qr_status(key: str):
             # 登录成功，保存 Cookie
             cookie = data.get("cookie")
             save_cookie(cookie)
+            # 立即刷新缓存，确保所有线程同步
+            from ncm.utils.cookie import CookieManager
+            CookieManager.refresh_cache()
+            print(f"✅ 用户登录成功，Cookie 已保存并同步到所有线程")
         return create_json_response(data)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -186,6 +190,10 @@ async def verify_sms_login(phone: str, captcha: str):
             cookie = result.get("cookie")
             if cookie:
                 save_cookie(cookie)
+                # 立即刷新缓存，确保所有线程同步
+                from ncm.utils.cookie import CookieManager
+                CookieManager.refresh_cache()
+                print(f"✅ 用户通过短信登录成功，Cookie 已同步")
                 return create_json_response({"code": 200, "message": "登录成功", "cookie": cookie})
         return create_json_response(result)
     except Exception as e:
@@ -200,6 +208,10 @@ async def phone_password_login(phone: str, password: str):
             cookie = result.get("cookie")
             if cookie:
                 save_cookie(cookie)
+                # 立即刷新缓存，确保所有线程同步
+                from ncm.utils.cookie import CookieManager
+                CookieManager.refresh_cache()
+                print(f"✅ 用户通过密码登录成功，Cookie 已同步")
                 return create_json_response({"code": 200, "message": "登录成功", "cookie": cookie})
         return create_json_response(result)
     except Exception as e:
@@ -213,6 +225,10 @@ async def import_cookie(cookie: str):
             raise HTTPException(status_code=400, detail="Cookie 格式不正确")
         
         save_cookie(cookie)
+        # 立即刷新缓存，确保所有线程同步
+        from ncm.utils.cookie import CookieManager
+        CookieManager.refresh_cache()
+        print(f"✅ Cookie 已导入并同步到所有线程")
         return create_json_response({"code": 200, "message": "Cookie 导入成功"})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
