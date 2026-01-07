@@ -553,9 +553,10 @@ HTML_TEMPLATE = """
             left: 20px;
             width: 300px;
             height: auto;
-            background: #000;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
             border-radius: 8px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
             z-index: 1000;
             display: none;
             overflow: hidden;
@@ -563,15 +564,29 @@ HTML_TEMPLATE = """
             user-select: none;
         }
 
+        [data-theme="dark"] .floating-video {
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+        }
+
         .floating-video-header {
-            background: rgba(0,0,0,0.8);
-            color: white;
+            background: var(--card-bg);
+            color: var(--text-primary);
             padding: 8px 12px;
             font-size: 0.8rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
             cursor: move;
+            border-bottom: 1px solid var(--border-color);
+            backdrop-filter: blur(8px);
+        }
+
+        [data-theme="dark"] .floating-video-header {
+            background: rgba(17, 17, 17, 0.9);
+        }
+
+        [data-theme="light"] .floating-video-header {
+            background: rgba(255, 255, 255, 0.9);
         }
 
         .floating-video-title {
@@ -589,7 +604,7 @@ HTML_TEMPLATE = """
         .floating-control-btn {
             background: none;
             border: none;
-            color: white;
+            color: var(--text-primary);
             cursor: pointer;
             padding: 2px 4px;
             font-size: 12px;
@@ -598,13 +613,22 @@ HTML_TEMPLATE = """
         }
 
         .floating-control-btn:hover {
-            background: rgba(255,255,255,0.2);
+            background: var(--hover-bg);
+        }
+
+        [data-theme="dark"] .floating-control-btn:hover {
+            background: rgba(255,255,255,0.1);
+        }
+
+        [data-theme="light"] .floating-control-btn:hover {
+            background: rgba(0,0,0,0.1);
         }
 
         .floating-video video {
             width: 100%;
             height: auto;
             display: block;
+            background: #000;
         }
 
         /* Minimize floating video */
