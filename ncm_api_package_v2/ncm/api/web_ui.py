@@ -2262,18 +2262,6 @@ def get_login_page_html():
             </button>
         </form>
 
-        <!-- API Hash Display (shown after successful login) -->
-        <div id="hashDisplay" style="display: none; margin-top: 20px; padding: 15px; background: rgba(0, 112, 243, 0.05); border: 1px solid rgba(0, 112, 243, 0.2); border-radius: var(--radius);">
-            <p style="font-weight: 600; margin-bottom: 8px; color: var(--text-primary); font-size: 0.9rem;">🔑 API访问Hash：</p>
-            <div style="display: flex; gap: 8px; align-items: center;">
-                <input type="text" id="hashValue" readonly style="flex: 1; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: var(--radius); font-family: monospace; font-size: 0.8rem; background: var(--bg-color); color: var(--text-primary);" value="">
-                <button onclick="copyHash()" style="padding: 8px 16px; background: var(--text-primary); color: var(--bg-color); border: none; border-radius: var(--radius); cursor: pointer; font-size: 0.85rem; font-weight: 600;">📋 复制</button>
-            </div>
-            <p style="margin-top: 8px; font-size: 0.8rem; color: var(--text-secondary);">
-                💡 在API请求中添加参数 <code style="background: rgba(0,0,0,0.1); padding: 2px 5px; border-radius: 3px;">hash=your_hash</code> 即可直接访问
-            </p>
-        </div>
-
         <div class="info-message">
             💡 请联系管理员获取访问密码<br>
             首次部署后，管理员可在服务器日志中查看初始密码
@@ -2356,25 +2344,16 @@ def get_login_page_html():
                 const data = await response.json();
 
                 if (data.code === 200) {
-                    // 显示Hash值
+                    // 存储hash到localStorage
                     if (data.hash) {
-                        document.getElementById('hashValue').value = data.hash;
-                        document.getElementById('hashDisplay').style.display = 'block';
-                        // 存储hash到localStorage
                         localStorage.setItem('access_hash', data.hash);
-                        btnText.innerHTML = '<span class="success-icon">✓</span>验证成功';
-                        
-                        // 3秒后跳转，给用户时间复制hash
-                        setTimeout(() => {
-                            window.location.href = '/';
-                        }, 3000);
-                    } else {
-                        // 兼容旧版本，直接跳转
-                        btnText.innerHTML = '<span class="success-icon">✓</span>验证成功';
-                        setTimeout(() => {
-                            window.location.href = '/';
-                        }, 600);
                     }
+                    
+                    // 验证成功，直接跳转
+                    btnText.innerHTML = '<span class="success-icon">✓</span>验证成功';
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 600);
                 } else {
                     showError(data.message || '密码错误，请重试');
                     submitBtn.disabled = false;
@@ -2396,21 +2375,6 @@ def get_login_page_html():
 
         function hideError() {
             errorMessage.style.display = 'none';
-        }
-
-        function copyHash() {
-            const hashInput = document.getElementById('hashValue');
-            hashInput.select();
-            document.execCommand('copy');
-            
-            const btn = event.target;
-            const originalText = btn.textContent;
-            btn.textContent = '✓ 已复制';
-            btn.style.background = '#10b981';
-            setTimeout(() => {
-                btn.textContent = originalText;
-                btn.style.background = '';
-            }, 2000);
         }
 
         // Enter key submit
