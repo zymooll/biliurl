@@ -546,6 +546,76 @@ HTML_TEMPLATE = """
             display: block;
         }
 
+        /* Floating Video Window */
+        .floating-video {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            width: 300px;
+            height: auto;
+            background: #000;
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            z-index: 1000;
+            display: none;
+            overflow: hidden;
+            cursor: move;
+            user-select: none;
+        }
+
+        .floating-video-header {
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 8px 12px;
+            font-size: 0.8rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: move;
+        }
+
+        .floating-video-title {
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .floating-video-controls {
+            display: flex;
+            gap: 8px;
+        }
+
+        .floating-control-btn {
+            background: none;
+            border: none;
+            color: white;
+            cursor: pointer;
+            padding: 2px 4px;
+            font-size: 12px;
+            border-radius: 2px;
+            transition: background 0.2s;
+        }
+
+        .floating-control-btn:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        .floating-video video {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        /* Minimize floating video */
+        .floating-video.minimized {
+            height: 40px;
+        }
+
+        .floating-video.minimized video {
+            display: none;
+        }
+
         .api-tools {
             background: #f7f7f7;
             border: 1px solid var(--border-color);
@@ -976,6 +1046,19 @@ HTML_TEMPLATE = """
         async function playSong(id, name, artist) {
             const videoPlayerDiv = document.getElementById('videoPlayer');
             const videoElement = document.getElementById('video');
+            const floatingVideoDiv = document.getElementById('floatingVideo');
+            const floatingVideoElement = document.getElementById('floatingVideoPlayer');
+            const floatingVideoTitle = document.getElementById('floatingVideoTitle');
+            
+            // 如果当前有视频在播放，将其转移到悬浮窗口
+            if (videoElement.src && !videoElement.paused && !videoElement.ended) {
+                floatingVideoElement.src = videoElement.src;
+                floatingVideoElement.currentTime = videoElement.currentTime;
+                floatingVideoTitle.textContent = videoElement.dataset.currentTitle || '正在播放';
+                floatingVideoDiv.style.display = 'block';
+                // 继续播放
+                floatingVideoElement.play();
+            }
             
             const useMv = document.getElementById('optionMv').checked;
             const useGpu = document.getElementById('optionGpu').checked;
@@ -994,7 +1077,8 @@ HTML_TEMPLATE = """
             document.getElementById('apiUrl').value = fullApiUrl;
             
             videoPlayerDiv.style.display = 'block';
-            videoElement.src = videoUrl; // Assuming logic or adding mock fallback below
+            videoElement.src = videoUrl;
+            videoElement.dataset.currentTitle = `${name} - ${artist}`;
             
             // Mock behavior for preview if not on server
             videoElement.onerror = () => {
@@ -1058,11 +1142,82 @@ HTML_TEMPLATE = """
             }
         }
 
+        // 悬浮视频窗口控制函数
+        function toggleFloatingVideo() {
+            const floatingVideo = document.getElementById('floatingVideo');
+            floatingVideo.classList.toggle('minimized');
+        }
+
+        function closeFloatingVideo() {
+            const floatingVideo = document.getElementById('floatingVideo');
+            const floatingVideoElement = document.getElementById('floatingVideoPlayer');
+            
+            floatingVideoElement.pause();
+            floatingVideoElement.src = '';
+            floatingVideo.style.display = 'none';
+        }
+
+        // 悬浮窗口拖拽功能
+        let isDragging = false;
+        let dragOffsetX = 0;
+        let dragOffsetY = 0;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const floatingVideo = document.getElementById('floatingVideo');
+            const floatingHeader = floatingVideo.querySelector('.floating-video-header');
+
+            floatingHeader.addEventListener('mousedown', function(e) {
+                if (e.target.classList.contains('floating-control-btn')) return;
+                
+                isDragging = true;
+                const rect = floatingVideo.getBoundingClientRect();
+                dragOffsetX = e.clientX - rect.left;
+                dragOffsetY = e.clientY - rect.top;
+                
+                document.body.style.userSelect = 'none';
+                e.preventDefault();
+            });
+
+            document.addEventListener('mousemove', function(e) {
+                if (!isDragging) return;
+                
+                const newX = e.clientX - dragOffsetX;
+                const newY = e.clientY - dragOffsetY;
+                
+                // 限制在视窗内
+                const maxX = window.innerWidth - floatingVideo.offsetWidth;
+                const maxY = window.innerHeight - floatingVideo.offsetHeight;
+                
+                floatingVideo.style.left = Math.max(0, Math.min(newX, maxX)) + 'px';
+                floatingVideo.style.bottom = 'auto';
+                floatingVideo.style.top = Math.max(0, Math.min(newY, maxY)) + 'px';
+            });
+
+            document.addEventListener('mouseup', function() {
+                if (isDragging) {
+                    isDragging = false;
+                    document.body.style.userSelect = '';
+                }
+            });
+        });
+
         window.onload = function() {
             initTheme();
             switchMode('search');
         };
     </script>
+
+    <!-- Floating Video Window -->
+    <div id="floatingVideo" class="floating-video">
+        <div class="floating-video-header">
+            <div class="floating-video-title" id="floatingVideoTitle">正在播放</div>
+            <div class="floating-video-controls">
+                <button class="floating-control-btn" onclick="toggleFloatingVideo()">−</button>
+                <button class="floating-control-btn" onclick="closeFloatingVideo()">×</button>
+            </div>
+        </div>
+        <video id="floatingVideoPlayer" controls></video>
+    </div>
 </body>
 </html>
 """
