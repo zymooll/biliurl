@@ -224,17 +224,36 @@ HTML_TEMPLATE = """
 
         /* Main Content Card */
         .card {
-            background: var(--bg-color);
+            background: var(--card-bg);
             border: 1px solid var(--border-color);
             border-radius: 12px;
             padding: 30px;
             box-shadow: var(--shadow-md);
             margin-bottom: 24px;
             transition: var(--transition);
+            backdrop-filter: blur(8px);
         }
 
         .card:hover {
             box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+        }
+
+        [data-theme="dark"] .card {
+            background: rgba(17, 17, 17, 0.9);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.8);
+        }
+
+        [data-theme="light"] .card {
+            background: rgba(255, 255, 255, 0.9);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+
+        [data-theme="dark"] .card:hover {
+            box-shadow: 0 8px 30px rgba(0,0,0,0.8);
+        }
+
+        [data-theme="light"] .card:hover {
+            box-shadow: 0 8px 30px rgba(0,0,0,0.3);
         }
 
         /* Search Section */
@@ -380,7 +399,7 @@ HTML_TEMPLATE = """
             font-size: 0.9rem;
             color: var(--text-primary);
             outline: none;
-            background: var(--bg-color);
+            background: var(--card-bg);
             cursor: pointer;
             transition: var(--transition);
             box-shadow: var(--shadow-sm);
@@ -547,11 +566,20 @@ HTML_TEMPLATE = """
         }
 
         .api-tools {
-            background: #f7f7f7;
+            background: var(--card-bg);
             border: 1px solid var(--border-color);
             border-radius: 8px;
             padding: 16px;
             margin-top: 16px;
+            backdrop-filter: blur(8px);
+        }
+
+        [data-theme="dark"] .api-tools {
+            background: rgba(17, 17, 17, 0.9);
+        }
+
+        [data-theme="light"] .api-tools {
+            background: rgba(255, 255, 255, 0.9);
         }
 
         .api-url-group {
@@ -562,7 +590,7 @@ HTML_TEMPLATE = """
 
         .api-input {
             flex: 1;
-            background: var(--bg-color);
+            background: var(--card-bg);
             border: 1px solid var(--border-color);
             color: var(--text-secondary);
             font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Mono', 'Droid Sans Mono', 'Source Code Pro', monospace;
@@ -573,7 +601,7 @@ HTML_TEMPLATE = """
 
         .btn-copy {
             padding: 8px 16px;
-            background: var(--bg-color);
+            background: var(--card-bg);
             border: 1px solid var(--border-color);
             color: var(--text-primary);
             border-radius: 4px;
@@ -586,6 +614,14 @@ HTML_TEMPLATE = """
             border-color: var(--text-primary);
         }
 
+        [data-theme="dark"] .btn-copy:hover {
+            background: rgba(255,255,255,0.1);
+        }
+
+        [data-theme="light"] .btn-copy:hover {
+            background: rgba(0,0,0,0.1);
+        }
+
         /* Pagination */
         .pagination {
             display: flex;
@@ -596,8 +632,32 @@ HTML_TEMPLATE = """
         }
 
         .btn-page {
-            background: var(--bg-color);
+            background: var(--card-bg);
             border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 8px 16px;
+            border-radius: var(--radius);
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: var(--transition);
+        }
+
+        .btn-page:hover:not(:disabled) {
+            border-color: var(--text-primary);
+        }
+
+        [data-theme="dark"] .btn-page:hover:not(:disabled) {
+            background: rgba(255,255,255,0.1);
+        }
+
+        [data-theme="light"] .btn-page:hover:not(:disabled) {
+            background: rgba(0,0,0,0.1);
+        }
+
+        .btn-page:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
             color: var(--text-primary);
             padding: 8px 16px;
             border-radius: var(--radius);
