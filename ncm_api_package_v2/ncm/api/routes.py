@@ -125,24 +125,50 @@ async def verify_password(password: str = Form(...)):
     else:
         return create_json_response({"code": 401, "message": "密码错误"}, 401)
 
-@router.post("/auth/refresh")
-async def refresh_password(current_password: str = Form(...), access_password: str = Cookie(None)):
-    """刷新访问密码（需要提供当前密码）"""
+@router.post("/auth/change-password")
+async def change_password(
+    current_password: str = Form(..., description="当前密码"),
+    new_password: str = Form(..., description="新密码")
+):
+    """
+    修改访问密码
+    
+    参数:
+        current_password: 当前密码（必填）
+        new_password: 新密码（必填）
+    
+    返回:
+        新密码的hash值
+    """
     # 验证当前密码
     if not AccessPasswordManager.verify_password(current_password):
-        raise HTTPException(status_code=403, detail="当前密码错误")
+        return create_json_response({
+            "code": 403,
+            "message": "当前密码错误"
+        }, 403)
     
-    # 生成新密码
-    new_password = AccessPasswordManager.refresh_password()
-    if new_password:
-        print(f"🔐 新的访问密码: {new_password}")
+    # 验证新密码
+    if not new_password or len(new_password) < 6:
+        return create_json_response({
+            "code": 400,
+            "message": "新密码长度至少6位"
+        }, 400)
+    
+    # 更新密码
+    if AccessPasswordManager.update_password(new_password):
+        print(f"🔐 访问密码已更改")
+        # 获取新密码的hash
+        new_hash = AccessPasswordManager.get_password_hash(new_password)
         return create_json_response({
             "code": 200,
-            "message": "密码已刷新",
-            "new_password": new_password
+            "message": "密码修改成功",
+            "hash": new_hash
         })
     else:
-        raise HTTPException(status_code=500, detail="密码刷新失败")
+        return create_json_response({
+            "code": 500,
+            "message": "密码修改失败"
+        }, 500)
 
 @router.get("/auth/check")
 async def check_auth(access_password: str = Cookie(None), access_hash: str = Query(None)):

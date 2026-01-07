@@ -1011,23 +1011,28 @@ HTML_TEMPLATE = r"""
                         <button onclick="copyApiHash()" class="btn btn-primary" style="min-width: 80px;">📋 复制</button>
                     </div>
                     <p style="margin-top: 10px; font-size: 0.85rem; color: var(--text-secondary);">
-                        💡 在API请求中添加参数 <code style="background: rgba(0,0,0,0.1); padding: 2px 6px; border-radius: 3px;">hash={your_hash}</code> 即可直接访问
+                        💡 在API请求中添加参数 <code style="background: rgba(0,0,0,0.1); padding: 2px 6px; border-radius: 3px;">access_hash={your_hash}</code> 即可直接访问
                     </p>
                 </div>
                 
                 <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 15px;">
-                    刷新访问密码后，所有用户需要使用新密码才能访问系统
+                    修改访问密码后，所有用户需要使用新密码才能访问系统
                 </p>
                 <div class="input-group" style="flex-direction: column; gap: 15px;">
-                    <input type="password" id="currentPasswordForRefresh" class="input" placeholder="输入当前访问密码以确认身份">
-                    <button class="btn btn-primary" onclick="refreshAccessPassword()" style="background: #f59e0b;">
-                        🔄 刷新访问密码
+                    <input type="password" id="currentPasswordForChange" class="input" placeholder="输入当前访问密码">
+                    <input type="password" id="newPasswordInput" class="input" placeholder="输入新密码（至少6位）" minlength="6">
+                    <input type="password" id="confirmPasswordInput" class="input" placeholder="确认新密码">
+                    <button class="btn btn-primary" onclick="changeAccessPassword()" style="background: #f59e0b;">
+                        🔒 修改访问密码
                     </button>
                 </div>
-                <div id="newPasswordDisplay" style="display: none; margin-top: 15px; padding: 15px; background: #fef3c7; border: 2px solid #f59e0b; border-radius: 8px;">
-                    <p style="font-weight: 600; margin-bottom: 8px; color: #92400e;">🔐 新的访问密码：</p>
-                    <p id="newPasswordText" style="font-size: 1.2rem; font-family: monospace; color: #1e40af; word-break: break-all;"></p>
-                    <p style="margin-top: 10px; font-size: 0.85rem; color: #92400e;">⚠️ 请立即保存此密码！关闭后将无法再次查看。</p>
+                <div id="passwordChangeResult" style="display: none; margin-top: 15px; padding: 15px; border-radius: 8px;">
+                    <p id="passwordChangeMessage" style="font-weight: 600;"></p>
+                    <div id="newHashDisplay" style="display: none; margin-top: 10px;">
+                        <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 5px;">新密码的Hash值：</p>
+                        <input type="text" id="newHashValue" readonly class="input" style="font-family: monospace; font-size: 0.85rem; margin-top: 5px;" value="">
+                    </div>
+                </div>
                 </div>
             </div>
         </div>
@@ -1774,35 +1779,78 @@ HTML_TEMPLATE = r"""
             }
         }
 
-        async function refreshAccessPassword() {
-            const currentPassword = document.getElementById('currentPasswordForRefresh').value.trim();
-            const newPasswordDisplay = document.getElementById('newPasswordDisplay');
-            const newPasswordText = document.getElementById('newPasswordText');
+        async function changeAccessPassword() {
+            const currentPassword = document.getElementById('currentPasswordForChange').value.trim();
+            const newPassword = document.getElementById('newPasswordInput').value.trim();
+            const confirmPassword = document.getElementById('confirmPasswordInput').value.trim();
+            const resultDiv = document.getElementById('passwordChangeResult');
+            const messageP = document.getElementById('passwordChangeMessage');
+            const newHashDisplay = document.getElementById('newHashDisplay');
+            const newHashValue = document.getElementById('newHashValue');
             
+            // 验证输入
             if (!currentPassword) {
                 alert('请输入当前访问密码');
                 return;
             }
             
-            if (!confirm('⚠️ 确定要刷新访问密码吗？\n\n刷新后，所有用户（包括您）都需要使用新密码重新登录系统。')) {
+            if (!newPassword) {
+                alert('请输入新密码');
+                return;
+            }
+            
+            if (newPassword.length < 6) {
+                alert('新密码长度至少6位');
+                return;
+            }
+            
+            if (newPassword !== confirmPassword) {
+                alert('两次输入的新密码不一致');
+                return;
+            }
+            
+            if (currentPassword === newPassword) {
+                alert('新密码不能与当前密码相同');
+                return;
+            }
+            
+            if (!confirm('⚠️ 确定要修改访问密码吗？\n\n修改后，所有用户（包括您）都需要使用新密码重新登录系统。')) {
                 return;
             }
             
             try {
-                const response = await fetch(`/auth/refresh?current_password=${encodeURIComponent(currentPassword)}`, {
-                    method: 'POST'
+                const formData = new FormData();
+                formData.append('current_password', currentPassword);
+                formData.append('new_password', newPassword);
+                
+                const response = await fetch('/auth/change-password', {
+                    method: 'POST',
+                    body: formData
                 });
                 const data = await response.json();
                 
                 if (data.code === 200) {
-                    // 显示新密码
-                    newPasswordText.textContent = data.new_password;
-                    newPasswordDisplay.style.display = 'block';
+                    // 显示成功消息
+                    messageP.textContent = '✅ 访问密码修改成功！';
+                    messageP.style.color = '#059669';
+                    resultDiv.style.background = '#d1fae5';
+                    resultDiv.style.border = '2px solid #059669';
+                    resultDiv.style.display = 'block';
+                    
+                    // 显示新的hash值
+                    if (data.hash) {
+                        newHashValue.value = data.hash;
+                        newHashDisplay.style.display = 'block';
+                        // 更新localStorage
+                        localStorage.setItem('access_hash', data.hash);
+                    }
                     
                     // 清空输入框
-                    document.getElementById('currentPasswordForRefresh').value = '';
+                    document.getElementById('currentPasswordForChange').value = '';
+                    document.getElementById('newPasswordInput').value = '';
+                    document.getElementById('confirmPasswordInput').value = '';
                     
-                    alert('✅ 访问密码已刷新！\n\n请立即复制并保存新密码。\n5秒后将自动跳转到登录页面。');
+                    alert('✅ 访问密码修改成功！\n\n新密码已生效。\n5秒后将自动跳转到登录页面。');
                     
                     // 5秒后跳转到登录页面
                     setTimeout(() => {
@@ -1811,10 +1859,21 @@ HTML_TEMPLATE = r"""
                         window.location.href = '/';
                     }, 5000);
                 } else {
-                    alert('刷新失败：' + (data.message || data.detail || '当前密码错误'));
+                    // 显示错误消息
+                    messageP.textContent = '❌ ' + (data.message || '修改失败');
+                    messageP.style.color = '#dc2626';
+                    resultDiv.style.background = '#fee2e2';
+                    resultDiv.style.border = '2px solid #dc2626';
+                    resultDiv.style.display = 'block';
+                    newHashDisplay.style.display = 'none';
                 }
             } catch (error) {
-                alert('刷新失败：' + error.message);
+                messageP.textContent = '❌ 修改失败：' + error.message;
+                messageP.style.color = '#dc2626';
+                resultDiv.style.background = '#fee2e2';
+                resultDiv.style.border = '2px solid #dc2626';
+                resultDiv.style.display = 'block';
+                newHashDisplay.style.display = 'none';
             }
         }
 
