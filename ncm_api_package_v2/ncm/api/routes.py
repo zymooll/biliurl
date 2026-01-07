@@ -95,7 +95,13 @@ async def root(access_password: str = Cookie(None)):
 async def verify_password(password: str = Form(...)):
     """验证访问密码"""
     if AccessPasswordManager.verify_password(password):
-        response = create_json_response({"code": 200, "message": "验证成功"})
+        # 获取密码对应的hash值（用于API调用）
+        password_hash = AccessPasswordManager.get_password_hash(password)
+        response = create_json_response({
+            "code": 200, 
+            "message": "验证成功",
+            "hash": password_hash  # 返回hash值供API使用
+        })
         # 设置 Cookie，有效期30天
         response.set_cookie(
             key="access_password",

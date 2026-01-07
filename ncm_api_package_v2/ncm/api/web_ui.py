@@ -1002,6 +1002,19 @@ HTML_TEMPLATE = r"""
             <!-- Access Password Management -->
             <div style="margin-top: 30px; padding-top: 30px; border-top: 1px solid var(--border-color);">
                 <h3 style="margin-bottom: 15px; font-size: 1.2rem; color: var(--text-primary);">访问密码管理</h3>
+                
+                <!-- API Hash Display -->
+                <div id="apiHashDisplay" style="display: none; margin-bottom: 20px; padding: 15px; background: rgba(0, 112, 243, 0.05); border: 2px solid rgba(0, 112, 243, 0.3); border-radius: 8px;">
+                    <p style="font-weight: 600; margin-bottom: 8px; color: var(--text-primary);">🔑 API访问Hash（用于API调用）：</p>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <input type="text" id="apiHashValue" readonly class="input" style="flex: 1; font-family: monospace; font-size: 0.85rem;" value="">
+                        <button onclick="copyApiHash()" class="btn btn-primary" style="min-width: 80px;">📋 复制</button>
+                    </div>
+                    <p style="margin-top: 10px; font-size: 0.85rem; color: var(--text-secondary);">
+                        💡 在API请求中添加参数 <code style="background: rgba(0,0,0,0.1); padding: 2px 6px; border-radius: 3px;">hash={your_hash}</code> 即可直接访问
+                    </p>
+                </div>
+                
                 <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 15px;">
                     刷新访问密码后，所有用户需要使用新密码才能访问系统
                 </p>
@@ -1561,8 +1574,21 @@ HTML_TEMPLATE = r"""
                 qrImage.src = qrData.qrimg;
                 qrTip.textContent = '请使用网易云音乐APP扫码登录';
                 
-                // Start checking QR status
+                // Start checking QR status with timeout (60 times, 2s interval = 120s)
+                let checkCount = 0;
+                const maxChecks = 60;
+                
                 qrCheckInterval = setInterval(async () => {
+                    checkCount++;
+                    
+                    // Check timeout
+                    if (checkCount > maxChecks) {
+                        clearInterval(qrCheckInterval);
+                        qrTip.textContent = '⏱️ 登录超时，请刷新二维码重试';
+                        qrTip.style.color = '#ef4444';
+                        return;
+                    }
+                    
                     try {
                         const checkResponse = await fetch(`/login/qr/check?key=${qrKey}`);
                         const checkData = await checkResponse.json();
@@ -1572,7 +1598,8 @@ HTML_TEMPLATE = r"""
                             qrTip.textContent = '❌ 二维码已过期，请刷新';
                             qrTip.style.color = '#ef4444';
                         } else if (checkData.code === 801) {
-                            qrTip.textContent = '⌛ 等待扫码中...';
+                            const remaining = maxChecks - checkCount;
+                            qrTip.textContent = `⌛ 等待扫码中... (${remaining * 2}秒后超时)`;
                             qrTip.style.color = 'var(--text-secondary)';
                         } else if (checkData.code === 802) {
                             qrTip.textContent = '📱 已扫码，请在手机上确认...';
@@ -1785,9 +1812,63 @@ HTML_TEMPLATE = r"""
             }
         }
 
+        // 加载API Hash值
+        async function loadApiHash() {
+            try {
+                // 从cookie中获取当前密码
+                const password = getCookie('access_password');
+                if (!password) {
+                    return;
+                }
+                
+                // 重新验证以获取hash（因为首次登录在登录页面，这里需要在主页面也能显示）
+                const response = await fetch('/auth/verify', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `password=${encodeURIComponent(password)}`
+                });
+                
+                const data = await response.json();
+                if (data.code === 200 && data.hash) {
+                    document.getElementById('apiHashValue').value = data.hash;
+                    document.getElementById('apiHashDisplay').style.display = 'block';
+                }
+            } catch (error) {
+                console.error('加载API Hash失败:', error);
+            }
+        }
+
+        // 复制API Hash
+        function copyApiHash() {
+            const hashInput = document.getElementById('apiHashValue');
+            hashInput.select();
+            document.execCommand('copy');
+            
+            // 显示复制成功提示
+            const btn = event.target;
+            const originalText = btn.textContent;
+            btn.textContent = '✓ 已复制';
+            btn.style.background = '#10b981';
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.style.background = '';
+            }, 2000);
+        }
+
+        // 获取Cookie值的辅助函数
+        function getCookie(name) {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop().split(';').shift();
+            return null;
+        }
+
         window.onload = function() {
             initTheme();
             switchMode('search');
+            loadApiHash(); // 加载API Hash
         };
     </script>
 
@@ -2173,9 +2254,21 @@ def get_login_page_html():
             </button>
         </form>
 
+        <!-- API Hash Display (shown after successful login) -->
+        <div id="hashDisplay" style="display: none; margin-top: 20px; padding: 15px; background: rgba(0, 112, 243, 0.05); border: 1px solid rgba(0, 112, 243, 0.2); border-radius: var(--radius);">
+            <p style="font-weight: 600; margin-bottom: 8px; color: var(--text-primary); font-size: 0.9rem;">🔑 API访问Hash：</p>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <input type="text" id="hashValue" readonly style="flex: 1; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: var(--radius); font-family: monospace; font-size: 0.8rem; background: var(--bg-color); color: var(--text-primary);" value="">
+                <button onclick="copyHash()" style="padding: 8px 16px; background: var(--text-primary); color: var(--bg-color); border: none; border-radius: var(--radius); cursor: pointer; font-size: 0.85rem; font-weight: 600;">📋 复制</button>
+            </div>
+            <p style="margin-top: 8px; font-size: 0.8rem; color: var(--text-secondary);">
+                💡 在API请求中添加参数 <code style="background: rgba(0,0,0,0.1); padding: 2px 5px; border-radius: 3px;">hash=your_hash</code> 即可直接访问
+            </p>
+        </div>
+
         <div class="info-message">
-            💡 默认密码：<strong>ncm2024</strong><br>
-            管理员可通过配置文件修改密码
+            💡 请联系管理员获取访问密码<br>
+            首次部署后，管理员可在服务器日志中查看初始密码
         </div>
     </div>
 
@@ -2255,10 +2348,23 @@ def get_login_page_html():
                 const data = await response.json();
 
                 if (data.code === 200) {
-                    btnText.innerHTML = '<span class="success-icon">✓</span>验证成功';
-                    setTimeout(() => {
-                        window.location.href = '/';
-                    }, 600);
+                    // 显示Hash值
+                    if (data.hash) {
+                        document.getElementById('hashValue').value = data.hash;
+                        document.getElementById('hashDisplay').style.display = 'block';
+                        btnText.innerHTML = '<span class="success-icon">✓</span>验证成功';
+                        
+                        // 3秒后跳转，给用户时间复制hash
+                        setTimeout(() => {
+                            window.location.href = '/';
+                        }, 3000);
+                    } else {
+                        // 兼容旧版本，直接跳转
+                        btnText.innerHTML = '<span class="success-icon">✓</span>验证成功';
+                        setTimeout(() => {
+                            window.location.href = '/';
+                        }, 600);
+                    }
                 } else {
                     showError(data.message || '密码错误，请重试');
                     submitBtn.disabled = false;
@@ -2280,6 +2386,21 @@ def get_login_page_html():
 
         function hideError() {
             errorMessage.style.display = 'none';
+        }
+
+        function copyHash() {
+            const hashInput = document.getElementById('hashValue');
+            hashInput.select();
+            document.execCommand('copy');
+            
+            const btn = event.target;
+            const originalText = btn.textContent;
+            btn.textContent = '✓ 已复制';
+            btn.style.background = '#10b981';
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.style.background = '';
+            }, 2000);
         }
 
         // Enter key submit

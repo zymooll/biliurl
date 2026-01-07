@@ -77,6 +77,11 @@ class AccessPasswordManager:
         return input_hash == stored_hash
     
     @staticmethod
+    def get_password_hash(password: str) -> str:
+        """获取密码对应的hash值（用于API调用）"""
+        return AccessPasswordManager._hash_password(password)
+    
+    @staticmethod
     def update_password(new_password: str) -> bool:
         """更新密码"""
         global _cached_password_hash
