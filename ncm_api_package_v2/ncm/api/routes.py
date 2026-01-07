@@ -1003,10 +1003,32 @@ async def generate_video_for_vrchat(
             song_id, level, unblock, cookie,
             max_retries=3
         )
-        if not audio_result["success"] or not audio_result.get("url"):
-            raise HTTPException(status_code=404, detail="无法获取歌曲链接")
+        
+        # 详细输出获取结果
+        print(f"🎵 音频获取结果: success={audio_result.get('success')}, has_url={bool(audio_result.get('url'))}")
+        if audio_result.get("is_grey_unlocked"):
+            print(f"🔓 使用灰色歌曲解锁API获取到音源")
+        
+        if not audio_result["success"]:
+            error_msg = audio_result.get("error", "未知错误")
+            error_data = audio_result.get("data", {})
+            print(f"❌ 音频获取失败: {error_msg}")
+            if error_data:
+                print(f"📊 API返回数据: {error_data}")
+            raise HTTPException(
+                status_code=404, 
+                detail=f"无法获取歌曲链接: {error_msg}"
+            )
+        
+        if not audio_result.get("url"):
+            print(f"❌ 音频URL为空，完整结果: {audio_result}")
+            raise HTTPException(
+                status_code=404, 
+                detail="无法获取歌曲链接: URL为空，可能是版权受限或歌曲不存在"
+            )
         
         audio_url = audio_result["url"]
+        print(f"✅ 成功获取音频URL: {audio_url[:100]}...")
         
         # 2. 获取歌曲详情（封面）- 带重试
         song_detail = retry_request(
