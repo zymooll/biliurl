@@ -31,7 +31,7 @@ class AccessPasswordManager:
     
     @staticmethod
     def initialize():
-        """初始化密码文件，自动根据配置计算并更新hash"""
+        """初始化密码文件，自动根据配置计算并更新hash（仅当未手动修改时）"""
         global _cached_password_hash
         
         with _password_lock:
@@ -44,7 +44,8 @@ class AccessPasswordManager:
                     "password_hash": current_password_hash,
                     "salt_version": "v2",
                     "created_at": "initialized",
-                    "auto_synced": True
+                    "auto_synced": True,
+                    "manual_changed": False
                 }
                 with open(ACCESS_PASSWORD_FILE, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=2)
@@ -64,9 +65,18 @@ class AccessPasswordManager:
                             os.remove(ACCESS_PASSWORD_FILE)
                             return AccessPasswordManager.initialize()
                         
-                        # 检查hash是否与当前配置匹配
+                        # 检查是否是手动修改的密码
+                        manual_changed = data.get("manual_changed", False)
+                        
+                        if manual_changed:
+                            # 手动修改的密码，不自动同步
+                            _cached_password_hash = stored_hash
+                            print(f"🔒 使用手动设置的密码（不自动同步）")
+                            return stored_hash
+                        
+                        # 只有自动同步的密码才会被更新
                         if stored_hash != current_password_hash:
-                            print(f"🔄 检测到密码或Salt配置变更，自动更新hash...")
+                            print(f"🔄 检测到配置文件中的默认密码变更，自动更新hash...")
                             data["password_hash"] = current_password_hash
                             data["updated_at"] = "auto_synced"
                             data["auto_synced"] = True
@@ -83,8 +93,8 @@ class AccessPasswordManager:
                     return AccessPasswordManager.initialize()
                 
                 # hash匹配，直接加载
-                _cached_password_hash = current_password_hash
-                return AccessPasswordManager.load_password_hash()
+                _cached_password_hash = stored_hash
+                return stored_hash
     
     @staticmethod
     def load_password_hash() -> str:
@@ -133,7 +143,7 @@ class AccessPasswordManager:
     
     @staticmethod
     def update_password(new_password: str) -> bool:
-        """更新密码"""
+        """更新密码（手动修改）"""
         global _cached_password_hash
         
         try:
@@ -141,13 +151,15 @@ class AccessPasswordManager:
                 password_hash = AccessPasswordManager._hash_password(new_password)
                 data = {
                     "password_hash": password_hash,
-                    "salt_version": "v2",  # 标记hash版本
-                    "updated_at": "refreshed"
+                    "salt_version": "v2",
+                    "manual_changed": True,  # 标记为手动修改
+                    "auto_synced": False,
+                    "updated_at": "manual_changed"
                 }
                 with open(ACCESS_PASSWORD_FILE, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=2)
                 _cached_password_hash = password_hash
-                print(f"🔐 访问密码已更新")
+                print(f"🔐 访问密码已更新（手动修改）")
                 return True
         except Exception as e:
             print(f"❌ 更新密码失败: {e}")
