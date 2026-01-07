@@ -71,16 +71,16 @@ HTML_TEMPLATE = r"""
             display: flex;
             flex-direction: column;
             align-items: stretch;
-            padding: 20px 10px;
+            padding: 20px 40px;
             transition: background-color 0.3s ease, color 0.3s ease;
             position: relative;
         }
 
         .container {
             width: 100%;
-            max-width: none;
-            margin: 0;
-            padding: 0;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 20px;
             padding-bottom: 80px; /* Prevent content from being hidden by floating tabs */
         }
 
@@ -2102,7 +2102,7 @@ def get_login_page_html():
             box-shadow: var(--shadow-md);
             padding: 40px;
             width: 100%;
-            max-width: 420px;
+            max-width: 800px;
             animation: slideIn 0.5s ease;
             backdrop-filter: blur(8px);
             transition: var(--transition);
