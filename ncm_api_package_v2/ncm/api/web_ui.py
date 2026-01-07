@@ -1387,40 +1387,6 @@ HTML_TEMPLATE = r"""
             }, 2000);
         }
 
-        // Theme management
-        function toggleTheme() {
-            const currentTheme = document.documentElement.getAttribute('data-theme');
-            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-            
-            document.documentElement.setAttribute('data-theme', newTheme);
-            localStorage.setItem('theme', newTheme);
-            
-            const sunIcon = document.querySelector('.sun-icon');
-            const moonIcon = document.querySelector('.moon-icon');
-            
-            if (newTheme === 'dark') {
-                sunIcon.style.display = 'none';
-                moonIcon.style.display = 'block';
-            } else {
-                sunIcon.style.display = 'block';
-                moonIcon.style.display = 'none';
-            }
-        }
-        
-        // Initialize theme
-        function initTheme() {
-            const savedTheme = localStorage.getItem('theme') || 'light';
-            document.documentElement.setAttribute('data-theme', savedTheme);
-            
-            const sunIcon = document.querySelector('.sun-icon');
-            const moonIcon = document.querySelector('.moon-icon');
-            
-            if (savedTheme === 'dark') {
-                sunIcon.style.display = 'none';
-                moonIcon.style.display = 'block';
-            }
-        }
-
         // 悬浮视频窗口控制函数
         function toggleFloatingVideo() {
             const floatingVideo = document.getElementById('floatingVideo');
@@ -1561,7 +1527,7 @@ HTML_TEMPLATE = r"""
                 const qrKey = keyData.unikey;
                 
                 // Get QR code image
-                const qrResponse = await fetch(\`/login/qr/create?key=\${qrKey}\`);
+                const qrResponse = await fetch(`/login/qr/create?key=${qrKey}`);
                 const qrData = await qrResponse.json();
                 
                 if (qrData.code !== 200) {
@@ -1574,7 +1540,7 @@ HTML_TEMPLATE = r"""
                 // Start checking QR status
                 qrCheckInterval = setInterval(async () => {
                     try {
-                        const checkResponse = await fetch(\`/login/qr/check?key=\${qrKey}\`);
+                        const checkResponse = await fetch(`/login/qr/check?key=${qrKey}`);
                         const checkData = await checkResponse.json();
                         
                         if (checkData.code === 800) {
@@ -1621,7 +1587,7 @@ HTML_TEMPLATE = r"""
             
             try {
                 sendBtn.disabled = true;
-                const response = await fetch(\`/login/sms/send?phone=\${phone}\`, { method: 'POST' });
+                const response = await fetch(`/login/sms/send?phone=${phone}`, { method: 'POST' });
                 const data = await response.json();
                 
                 if (data.code === 200) {
@@ -1630,7 +1596,7 @@ HTML_TEMPLATE = r"""
                     
                     const interval = setInterval(() => {
                         smsSendCountdown--;
-                        sendBtn.textContent = \`\${smsSendCountdown}秒后重试\`;
+                        sendBtn.textContent = `${smsSendCountdown}秒后重试`;
                         
                         if (smsSendCountdown <= 0) {
                             clearInterval(interval);
@@ -1658,7 +1624,7 @@ HTML_TEMPLATE = r"""
             }
             
             try {
-                const response = await fetch(\`/login/sms/verify?phone=\${phone}&captcha=\${captcha}\`, { method: 'POST' });
+                const response = await fetch(`/login/sms/verify?phone=${phone}&captcha=${captcha}`, { method: 'POST' });
                 const data = await response.json();
                 
                 if (data.code === 200) {
@@ -1682,7 +1648,7 @@ HTML_TEMPLATE = r"""
             }
             
             try {
-                const response = await fetch(\`/login/password?phone=\${phone}&password=\${password}\`, { method: 'POST' });
+                const response = await fetch(`/login/password?phone=${phone}&password=${password}`, { method: 'POST' });
                 const data = await response.json();
                 
                 if (data.code === 200) {
@@ -1705,7 +1671,7 @@ HTML_TEMPLATE = r"""
             }
             
             try {
-                const response = await fetch(\`/cookie/import?cookie=\${encodeURIComponent(cookie)}\`, { method: 'POST' });
+                const response = await fetch(`/cookie/import?cookie=${encodeURIComponent(cookie)}`, { method: 'POST' });
                 const data = await response.json();
                 
                 if (data.code === 200) {
