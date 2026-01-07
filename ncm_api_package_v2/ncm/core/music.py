@@ -43,16 +43,30 @@ class UserInteractive:
                     resp = requests.get(grey_api_url, timeout=60)
                     data = resp.json()
                     
-                    if data.get('code') == 200 and data.get('data'):
-                        url = data['data'].get('url')
-                        if url:
-                            print(f"✅ 备用API成功获取音源: {url[:80]}...")
+                    if data.get('code') == 200:
+                        # data字段可能是字符串URL或字典
+                        url_data = data.get('data')
+                        
+                        # 如果data是字符串，直接作为URL使用
+                        if isinstance(url_data, str) and url_data:
+                            print(f"✅ 备用API成功获取音源: {url_data[:80]}...")
                             return {
-                                "url": url,
-                                "level": data['data'].get('type', 'unknown'),
+                                "url": url_data,
+                                "level": "grey_unlocked",
                                 "source": "grey_api"
                             }
-                    print(f"⚠️ 备用API未返回有效音源")
+                        # 如果data是字典，尝试从中提取url
+                        elif isinstance(url_data, dict):
+                            url = url_data.get('url')
+                            if url:
+                                print(f"✅ 备用API成功获取音源: {url[:80]}...")
+                                return {
+                                    "url": url,
+                                    "level": url_data.get('type', 'grey_unlocked'),
+                                    "source": "grey_api"
+                                }
+                    
+                    print(f"⚠️ 备用API未返回有效音源，返回数据: {data}")
                     return None
                 except Exception as e:
                     print(f"⚠️ 备用API请求失败: {e}")
