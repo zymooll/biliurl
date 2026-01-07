@@ -525,9 +525,47 @@ class VideoGenerator:
             # 1. 下载音频
             print("📥 下载音频...")
             audio_path = os.path.join(temp_dir, "audio.mp3")
-            audio_response = requests.get(audio_url, timeout=30)
+            
+            # 添加更多headers，模拟浏览器请求
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': '*/*',
+                'Accept-Encoding': 'identity',  # 不要压缩，直接获取原始数据
+                'Connection': 'keep-alive'
+            }
+            
+            audio_response = requests.get(audio_url, timeout=60, headers=headers, stream=True)
+            audio_response.raise_for_status()  # 检查HTTP状态码
+            
+            # 下载并保存音频
             with open(audio_path, 'wb') as f:
-                f.write(audio_response.content)
+                for chunk in audio_response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            
+            # 验证音频文件
+            audio_size = os.path.getsize(audio_path)
+            print(f"✅ 音频下载完成: {audio_size / 1024 / 1024:.2f} MB")
+            
+            if audio_size < 10240:  # 小于10KB，可能是错误页面
+                print(f"⚠️ 音频文件异常小 ({audio_size} bytes)，可能下载失败")
+                raise Exception(f"音频文件大小异常: {audio_size} bytes")
+            
+            # 使用ffprobe验证音频文件格式（如果可用）
+            try:
+                import subprocess
+                ffprobe_cmd = ['ffprobe', '-v', 'error', '-show_entries', 
+                              'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', 
+                              audio_path]
+                result = subprocess.run(ffprobe_cmd, capture_output=True, text=True, timeout=5)
+                if result.returncode == 0 and result.stdout.strip():
+                    duration = float(result.stdout.strip())
+                    print(f"✅ 音频格式验证通过，时长: {duration:.2f}秒")
+                else:
+                    print(f"⚠️ 无法验证音频格式，但将尝试继续处理")
+            except Exception as probe_error:
+                print(f"⚠️ ffprobe验证跳过: {probe_error}")
+            
             
             # 2. 下载封面
             print("📥 下载封面...")
@@ -758,8 +796,29 @@ class VideoGenerator:
         try:
             # 下载音频
             audio_path = os.path.join(temp_dir, "audio.mp3")
-            audio_response = requests.get(audio_url, timeout=30)
+            
+            # 添加更多headers，模拟浏览器请求
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': '*/*',
+                'Accept-Encoding': 'identity',
+                'Connection': 'keep-alive'
+            }
+            
+            audio_response = requests.get(audio_url, timeout=60, headers=headers, stream=True)
+            audio_response.raise_for_status()
+            
             with open(audio_path, 'wb') as f:
+                for chunk in audio_response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            
+            # 验证音频文件
+            audio_size = os.path.getsize(audio_path)
+            print(f"✅ 音频下载完成: {audio_size / 1024 / 1024:.2f} MB")
+            
+            if audio_size < 10240:
+                raise Exception(f"音频文件大小异常: {audio_size} bytes")
                 f.write(audio_response.content)
             
             # 下载封面
