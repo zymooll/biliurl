@@ -40,7 +40,7 @@ class UserInteractive:
                 try:
                     grey_api_url = f"{API_BASE_URL}song/url/match?id={song_id}"
                     print(f"🔓 检测到灰色歌曲，尝试使用备用API: {grey_api_url}")
-                    resp = requests.get(grey_api_url, timeout=10)
+                    resp = requests.get(grey_api_url, timeout=60)
                     data = resp.json()
                     
                     if data.get('code') == 200 and data.get('data'):
