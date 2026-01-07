@@ -31,41 +31,59 @@ class AccessPasswordManager:
     
     @staticmethod
     def initialize():
-        """初始化密码文件，如果不存在则创建"""
+        """初始化密码文件，自动根据配置计算并更新hash"""
         global _cached_password_hash
         
         with _password_lock:
+            # 计算当前配置密码对应的hash
+            current_password_hash = AccessPasswordManager._hash_password(DEFAULT_ACCESS_PASSWORD)
+            
             if not os.path.exists(ACCESS_PASSWORD_FILE):
-                # 创建默认密码
-                password_hash = AccessPasswordManager._hash_password(DEFAULT_ACCESS_PASSWORD)
+                # 创建新密码文件
                 data = {
-                    "password_hash": password_hash,
-                    "salt_version": "v2",  # 标记hash版本
-                    "created_at": "initialized"
+                    "password_hash": current_password_hash,
+                    "salt_version": "v2",
+                    "created_at": "initialized",
+                    "auto_synced": True
                 }
                 with open(ACCESS_PASSWORD_FILE, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=2)
-                _cached_password_hash = password_hash
+                _cached_password_hash = current_password_hash
                 print(f"🔐 访问密码已初始化，默认密码: {DEFAULT_ACCESS_PASSWORD}")
-                return password_hash
+                return current_password_hash
             else:
-                # 检查是否需要迁移旧版本hash
+                # 读取现有文件
                 try:
                     with open(ACCESS_PASSWORD_FILE, "r", encoding="utf-8") as f:
                         data = json.load(f)
-                        # 如果没有salt_version标记，说明是旧版本，需要重新生成
+                        stored_hash = data.get("password_hash")
+                        
+                        # 检查是否需要迁移旧版本hash
                         if "salt_version" not in data or data.get("salt_version") != "v2":
                             print(f"⚠️ 检测到旧版本密码格式，正在迁移...")
-                            # 删除旧文件，重新初始化
                             os.remove(ACCESS_PASSWORD_FILE)
                             return AccessPasswordManager.initialize()
+                        
+                        # 检查hash是否与当前配置匹配
+                        if stored_hash != current_password_hash:
+                            print(f"🔄 检测到密码或Salt配置变更，自动更新hash...")
+                            data["password_hash"] = current_password_hash
+                            data["updated_at"] = "auto_synced"
+                            data["auto_synced"] = True
+                            with open(ACCESS_PASSWORD_FILE, "w", encoding="utf-8") as f:
+                                json.dump(data, f, indent=2)
+                            _cached_password_hash = current_password_hash
+                            print(f"✅ Hash已自动更新，当前密码: {DEFAULT_ACCESS_PASSWORD}")
+                            return current_password_hash
+                        
                 except Exception as e:
                     print(f"❌ 读取密码文件失败: {e}，重新初始化...")
                     if os.path.exists(ACCESS_PASSWORD_FILE):
                         os.remove(ACCESS_PASSWORD_FILE)
                     return AccessPasswordManager.initialize()
                 
-                # 加载现有密码
+                # hash匹配，直接加载
+                _cached_password_hash = current_password_hash
                 return AccessPasswordManager.load_password_hash()
     
     @staticmethod
