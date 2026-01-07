@@ -3,7 +3,7 @@ Web UI - 可视化界面
 提供搜索和播放功能的网页界面
 """
 
-HTML_TEMPLATE = """
+HTML_TEMPLATE = r"""
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
