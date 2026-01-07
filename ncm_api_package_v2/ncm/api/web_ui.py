@@ -1017,6 +1017,26 @@ HTML_TEMPLATE = """
                 return;
             }
             
+            // 搜索时检查是否有视频在播放，如果有则转移到悬浮窗口
+            const videoElement = document.getElementById('video');
+            const floatingVideoDiv = document.getElementById('floatingVideo');
+            const floatingVideoElement = document.getElementById('floatingVideoPlayer');
+            const floatingVideoTitle = document.getElementById('floatingVideoTitle');
+            
+            if (videoElement && videoElement.src && !videoElement.paused && !videoElement.ended) {
+                floatingVideoElement.src = videoElement.src;
+                floatingVideoElement.currentTime = videoElement.currentTime;
+                floatingVideoTitle.textContent = videoElement.dataset.currentTitle || '正在播放';
+                floatingVideoDiv.style.display = 'block';
+                // 悬浮窗口视频默认暂停
+                floatingVideoElement.pause();
+                
+                // 清空主视频播放器
+                videoElement.pause();
+                videoElement.src = '';
+                document.getElementById('videoPlayer').style.display = 'none';
+            }
+            
             if (isSearching) return;
             isSearching = true;
             currentKeywords = keywords;
@@ -1135,19 +1155,6 @@ HTML_TEMPLATE = """
         async function playSong(id, name, artist) {
             const videoPlayerDiv = document.getElementById('videoPlayer');
             const videoElement = document.getElementById('video');
-            const floatingVideoDiv = document.getElementById('floatingVideo');
-            const floatingVideoElement = document.getElementById('floatingVideoPlayer');
-            const floatingVideoTitle = document.getElementById('floatingVideoTitle');
-            
-            // 如果当前有视频在播放，将其转移到悬浮窗口
-            if (videoElement.src && !videoElement.paused && !videoElement.ended) {
-                floatingVideoElement.src = videoElement.src;
-                floatingVideoElement.currentTime = videoElement.currentTime;
-                floatingVideoTitle.textContent = videoElement.dataset.currentTitle || '正在播放';
-                floatingVideoDiv.style.display = 'block';
-                // 继续播放
-                floatingVideoElement.play();
-            }
             
             const useMv = document.getElementById('optionMv').checked;
             const useGpu = document.getElementById('optionGpu').checked;
