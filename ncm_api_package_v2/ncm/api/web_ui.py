@@ -1811,179 +1811,350 @@ def get_web_ui_html():
     return HTML_TEMPLATE
 
 def get_login_page_html():
-    """返回访问密码登录页面"""
+    """返回访问密码登录页面（匹配主UI风格）"""
     return r"""
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>访问验证 - NCM Video Service</title>
     <style>
+        :root {
+            --bg-color: #fff;
+            --text-primary: #171717;
+            --text-secondary: #666;
+            --border-color: #eaeaea;
+            --accent-color: #000;
+            --accent-hover: #333;
+            --radius: 6px;
+            --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            --shadow-sm: 0 2px 4px rgba(0,0,0,0.02);
+            --shadow-md: 0 5px 10px rgba(0,0,0,0.12);
+            --transition: all 0.2s ease;
+        }
+
+        [data-theme="dark"] {
+            --bg-color: #000;
+            --text-primary: #fafafa;
+            --text-secondary: #888;
+            --border-color: #333;
+            --accent-color: #fff;
+            --accent-hover: #ccc;
+            --shadow-sm: 0 2px 4px rgba(255,255,255,0.02);
+            --shadow-md: 0 5px 10px rgba(255,255,255,0.05);
+        }
+
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            -webkit-font-smoothing: antialiased;
         }
-        
+
+        html {
+            background-color: var(--bg-color);
+            transition: background-color 0.3s ease;
+        }
+
+        /* Mouse glow effect for dark mode */
+        [data-theme="dark"] body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: radial-gradient(100px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04) 40%, transparent 70%);
+            pointer-events: none;
+            z-index: -1;
+            transition: opacity 0.3s ease;
+        }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: var(--font-sans);
+            background-color: var(--bg-color);
+            color: var(--text-primary);
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
             padding: 20px;
+            transition: background-color 0.3s ease, color 0.3s ease;
+            position: relative;
         }
-        
+
+        /* Theme Toggle Button */
+        .theme-toggle {
+            position: fixed;
+            top: 30px;
+            right: 30px;
+            width: 48px;
+            height: 48px;
+            border: 1px solid var(--border-color);
+            border-radius: 50%;
+            background: var(--bg-color);
+            color: var(--text-primary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: var(--transition);
+            box-shadow: var(--shadow-md);
+            z-index: 1001;
+        }
+
+        .theme-toggle:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md), 0 8px 25px rgba(0,0,0,0.15);
+        }
+
+        .theme-toggle svg {
+            width: 20px;
+            height: 20px;
+            transition: transform 0.3s ease;
+        }
+
+        .theme-toggle:hover svg {
+            transform: rotate(180deg);
+        }
+
         .login-container {
-            background: white;
-            border-radius: 16px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            box-shadow: var(--shadow-md);
             padding: 40px;
             width: 100%;
-            max-width: 400px;
+            max-width: 420px;
             animation: slideIn 0.5s ease;
+            backdrop-filter: blur(8px);
+            transition: var(--transition);
         }
-        
+
+        [data-theme="dark"] .login-container {
+            background: rgba(17, 17, 17, 0.9);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.8);
+        }
+
+        .login-container:hover {
+            box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+        }
+
+        [data-theme="dark"] .login-container:hover {
+            box-shadow: 0 8px 30px rgba(0,0,0,0.8);
+        }
+
         @keyframes slideIn {
             from {
                 opacity: 0;
-                transform: translateY(-30px);
+                transform: translateY(-20px);
             }
             to {
                 opacity: 1;
                 transform: translateY(0);
             }
         }
-        
+
         .logo {
             text-align: center;
             margin-bottom: 30px;
         }
-        
+
         .logo h1 {
-            font-size: 28px;
-            color: #333;
+            font-size: 2rem;
+            font-weight: 800;
+            letter-spacing: -0.05rem;
             margin-bottom: 8px;
+            background: linear-gradient(180deg, #555 0%, #000 100%);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
         }
-        
+
+        [data-theme="dark"] .logo h1 {
+            background: linear-gradient(180deg, #fff 0%, #ccc 100%);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
         .logo p {
-            color: #666;
-            font-size: 14px;
+            color: var(--text-secondary);
+            font-size: 0.95rem;
         }
-        
+
         .form-group {
             margin-bottom: 20px;
         }
-        
+
         .form-group label {
             display: block;
             margin-bottom: 8px;
-            color: #333;
+            color: var(--text-primary);
             font-weight: 500;
-            font-size: 14px;
+            font-size: 0.9rem;
         }
-        
+
         .form-group input {
             width: 100%;
-            padding: 12px 16px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 16px;
-            transition: all 0.3s;
+            height: 48px;
+            padding: 0 16px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            font-size: 1rem;
+            transition: var(--transition);
             outline: none;
+            background: var(--bg-color);
+            color: var(--text-primary);
         }
-        
+
+        .form-group input::placeholder {
+            color: var(--text-secondary);
+        }
+
         .form-group input:focus {
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            border-color: var(--text-primary);
+            box-shadow: 0 0 0 2px rgba(0,0,0,0.1);
         }
-        
+
+        [data-theme="dark"] .form-group input:focus {
+            box-shadow: 0 0 0 2px rgba(255,255,255,0.1);
+        }
+
         .btn {
             width: 100%;
-            padding: 14px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
+            height: 48px;
+            padding: 0 24px;
+            background: var(--text-primary);
+            color: var(--bg-color);
+            border: 1px solid transparent;
+            border-radius: var(--radius);
+            font-size: 0.95rem;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.3s;
+            transition: var(--transition);
             margin-top: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
-        
+
         .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+            background: var(--accent-hover);
+            transform: translateY(-1px);
         }
-        
+
         .btn:active {
             transform: translateY(0);
         }
-        
+
         .btn:disabled {
-            background: #ccc;
+            background: var(--text-secondary);
             cursor: not-allowed;
             transform: none;
+            opacity: 0.6;
         }
-        
+
         .error-message {
-            background: #fee;
-            border: 1px solid #fcc;
-            color: #c33;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #dc2626;
             padding: 12px;
-            border-radius: 8px;
+            border-radius: var(--radius);
             margin-bottom: 20px;
-            font-size: 14px;
+            font-size: 0.9rem;
             display: none;
-            animation: shake 0.5s;
+            animation: shake 0.4s ease;
         }
-        
+
+        [data-theme="dark"] .error-message {
+            background: rgba(239, 68, 68, 0.15);
+            color: #f87171;
+        }
+
         @keyframes shake {
             0%, 100% { transform: translateX(0); }
-            25% { transform: translateX(-10px); }
-            75% { transform: translateX(10px); }
+            25% { transform: translateX(-8px); }
+            75% { transform: translateX(8px); }
         }
-        
+
         .info-message {
-            background: #e3f2fd;
-            border: 1px solid #90caf9;
-            color: #1976d2;
+            background: rgba(0, 112, 243, 0.05);
+            border: 1px solid rgba(0, 112, 243, 0.2);
+            color: var(--text-secondary);
             padding: 12px;
-            border-radius: 8px;
+            border-radius: var(--radius);
             margin-top: 20px;
-            font-size: 13px;
+            font-size: 0.85rem;
             text-align: center;
+            line-height: 1.6;
         }
-        
+
+        [data-theme="dark"] .info-message {
+            background: rgba(0, 112, 243, 0.1);
+        }
+
+        .info-message strong {
+            color: var(--text-primary);
+            font-family: 'Courier New', monospace;
+            background: rgba(0,0,0,0.05);
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+
+        [data-theme="dark"] .info-message strong {
+            background: rgba(255,255,255,0.1);
+        }
+
         .loading {
             display: inline-block;
-            width: 16px;
-            height: 16px;
-            border: 2px solid #fff;
+            width: 14px;
+            height: 14px;
+            border: 2px solid var(--bg-color);
             border-radius: 50%;
             border-top-color: transparent;
-            animation: spin 0.8s linear infinite;
+            animation: spin 0.6s linear infinite;
             margin-right: 8px;
-            vertical-align: middle;
         }
-        
+
         @keyframes spin {
             to { transform: rotate(360deg); }
+        }
+
+        .success-icon {
+            display: inline-block;
+            margin-right: 6px;
         }
     </style>
 </head>
 <body>
+    <!-- Theme Toggle -->
+    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
+        <svg id="sunIcon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+        </svg>
+        <svg id="moonIcon" style="display: none;" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+        </svg>
+    </button>
+
     <div class="login-container">
         <div class="logo">
             <h1>🎵 NCM Video Service</h1>
-            <p>请输入访问密码</p>
+            <p>请输入访问密码继续</p>
         </div>
-        
+
         <div id="errorMessage" class="error-message"></div>
-        
+
         <form id="loginForm">
             <div class="form-group">
                 <label for="password">访问密码</label>
@@ -1996,42 +2167,82 @@ def get_login_page_html():
                     autocomplete="off"
                 >
             </div>
-            
+
             <button type="submit" class="btn" id="submitBtn">
                 <span id="btnText">进入系统</span>
             </button>
         </form>
-        
+
         <div class="info-message">
             💡 默认密码：<strong>ncm2024</strong><br>
             管理员可通过配置文件修改密码
         </div>
     </div>
-    
+
     <script>
+        // Theme management
+        function initTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            updateThemeIcon(savedTheme);
+        }
+
+        function toggleTheme() {
+            const html = document.documentElement;
+            const currentTheme = html.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            html.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateThemeIcon(newTheme);
+        }
+
+        function updateThemeIcon(theme) {
+            const sunIcon = document.getElementById('sunIcon');
+            const moonIcon = document.getElementById('moonIcon');
+            if (theme === 'dark') {
+                sunIcon.style.display = 'none';
+                moonIcon.style.display = 'block';
+            } else {
+                sunIcon.style.display = 'block';
+                moonIcon.style.display = 'none';
+            }
+        }
+
+        // Mouse glow effect for dark mode
+        if (window.matchMedia('(pointer: fine)').matches) {
+            document.addEventListener('mousemove', (e) => {
+                const x = (e.clientX / window.innerWidth) * 100;
+                const y = (e.clientY / window.innerHeight) * 100;
+                document.body.style.setProperty('--mouse-x', x + '%');
+                document.body.style.setProperty('--mouse-y', y + '%');
+            });
+        }
+
+        // Form handling
         const form = document.getElementById('loginForm');
         const passwordInput = document.getElementById('password');
         const submitBtn = document.getElementById('submitBtn');
         const btnText = document.getElementById('btnText');
         const errorMessage = document.getElementById('errorMessage');
-        
-        // 自动聚焦密码输入框
+
+        // Initialize theme and focus
+        initTheme();
         passwordInput.focus();
-        
+
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
-            
+
             const password = passwordInput.value.trim();
             if (!password) {
                 showError('请输入密码');
                 return;
             }
-            
-            // 显示加载状态
+
+            // Show loading state
             submitBtn.disabled = true;
             btnText.innerHTML = '<span class="loading"></span>验证中...';
             hideError();
-            
+
             try {
                 const response = await fetch('/auth/verify', {
                     method: 'POST',
@@ -2040,14 +2251,14 @@ def get_login_page_html():
                     },
                     body: `password=${encodeURIComponent(password)}`
                 });
-                
+
                 const data = await response.json();
-                
+
                 if (data.code === 200) {
-                    btnText.textContent = '✅ 验证成功！';
+                    btnText.innerHTML = '<span class="success-icon">✓</span>验证成功';
                     setTimeout(() => {
                         window.location.href = '/';
-                    }, 500);
+                    }, 600);
                 } else {
                     showError(data.message || '密码错误，请重试');
                     submitBtn.disabled = false;
@@ -2056,22 +2267,22 @@ def get_login_page_html():
                     passwordInput.focus();
                 }
             } catch (error) {
-                showError('网络错误，请重试');
+                showError('网络错误，请稍后重试');
                 submitBtn.disabled = false;
                 btnText.textContent = '进入系统';
             }
         });
-        
+
         function showError(message) {
-            errorMessage.textContent = '❌ ' + message;
+            errorMessage.textContent = '✕ ' + message;
             errorMessage.style.display = 'block';
         }
-        
+
         function hideError() {
             errorMessage.style.display = 'none';
         }
-        
-        // Enter键提交
+
+        // Enter key submit
         passwordInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
                 form.dispatchEvent(new Event('submit'));

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query, Response, BackgroundTasks, Cookie, Header
+from fastapi import APIRouter, HTTPException, Query, Response, BackgroundTasks, Cookie, Header, Form
 from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, HTMLResponse, StreamingResponse
 import requests
 import os
@@ -92,7 +92,7 @@ async def root(access_password: str = Cookie(None)):
     return HTMLResponse(content=get_web_ui_html())
 
 @router.post("/auth/verify")
-async def verify_password(password: str):
+async def verify_password(password: str = Form(...)):
     """验证访问密码"""
     if AccessPasswordManager.verify_password(password):
         response = create_json_response({"code": 200, "message": "验证成功"})
@@ -109,7 +109,7 @@ async def verify_password(password: str):
         return create_json_response({"code": 401, "message": "密码错误"}, 401)
 
 @router.post("/auth/refresh")
-async def refresh_password(current_password: str, access_password: str = Cookie(None)):
+async def refresh_password(current_password: str = Form(...), access_password: str = Cookie(None)):
     """刷新访问密码（需要提供当前密码）"""
     # 验证当前密码
     if not AccessPasswordManager.verify_password(current_password):
