@@ -93,20 +93,9 @@ class UserInteractive:
                     print("⚠️ 检测到 VIP 身份未生效或音源受限（返回了酷狗占位符）")
                     is_grey = True
                 
-                # 如果是灰色歌曲，尝试备用方案
+                # 如果是灰色歌曲，尝试解灰模式
                 if is_grey:
-                    # 方案1: 尝试备用灰色歌曲API
-                    grey_result = try_grey_song_api(songID)
-                    if grey_result and grey_result.get('url'):
-                        return {
-                            "success": True,
-                            "level": grey_result.get('level', '未知'),
-                            "url": grey_result['url'],
-                            "raw": {"source": "grey_api"},
-                            "is_grey_unlocked": True
-                        }
-                    
-                    # 方案2: 尝试解灰模式
+                    # 先尝试解灰模式
                     if not unblock:
                         print("🔄 正在尝试开启解灰模式重新获取...")
                         data = fetch(level, True, None) # 开启解灰，且不带 Cookie 避免干扰
@@ -120,29 +109,17 @@ class UserInteractive:
                     if 'data' in data and isinstance(data['data'], list) and len(data['data']) > 0:
                         song_info = data['data'][0]
                         downloadUrl = song_info.get('url')
-                        
-                        # 如果还是没有URL，最后再尝试一次备用API
-                        if not downloadUrl:
-                            grey_result = try_grey_song_api(songID)
-                            if grey_result and grey_result.get('url'):
-                                return {
-                                    "success": True,
-                                    "level": grey_result.get('level', '未知'),
-                                    "url": grey_result['url'],
-                                    "raw": {"source": "grey_api_fallback"},
-                                    "is_grey_unlocked": True
-                                }
 
+            # 如果常规方式和解灰模式都失败，最后尝试备用API
             if not downloadUrl:
-                # 最后尝试：直接使用备用API
-                print("⚠️ 常规方式全部失败，最后尝试备用API...")
+                print("⚠️ 常规方式全部失败，尝试使用灰色歌曲备用API...")
                 grey_result = try_grey_song_api(songID)
                 if grey_result and grey_result.get('url'):
                     return {
                         "success": True,
                         "level": grey_result.get('level', '未知'),
                         "url": grey_result['url'],
-                        "raw": {"source": "grey_api_last_resort"},
+                        "raw": {"source": "grey_api"},
                         "is_grey_unlocked": True
                     }
                 
