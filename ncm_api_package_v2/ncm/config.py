@@ -8,3 +8,4 @@ GUEST_COOKIE_FILE = "cookie-guest.json"
 # 访问密码配置
 ACCESS_PASSWORD_FILE = "access_password.json"
 DEFAULT_ACCESS_PASSWORD = "ncm2024"  # 默认访问密码
+ACCESS_PASSWORD_SALT = "ncm_secure_salt_2024"  # 用于hash加盐的salt值，可自定义

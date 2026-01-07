@@ -8,7 +8,7 @@ import os
 import hashlib
 import secrets
 import threading
-from ncm.config import ACCESS_PASSWORD_FILE, DEFAULT_ACCESS_PASSWORD
+from ncm.config import ACCESS_PASSWORD_FILE, DEFAULT_ACCESS_PASSWORD, ACCESS_PASSWORD_SALT
 
 # 线程安全锁
 _password_lock = threading.RLock()
@@ -20,8 +20,14 @@ class AccessPasswordManager:
     
     @staticmethod
     def _hash_password(password: str) -> str:
-        """对密码进行哈希处理"""
-        return hashlib.sha256(password.encode('utf-8')).hexdigest()
+        """对密码进行哈希处理（带salt）"""
+        salted_password = f"{password}{ACCESS_PASSWORD_SALT}"
+        return hashlib.sha256(salted_password.encode('utf-8')).hexdigest()
+    
+    @staticmethod
+    def _hash_with_salt(password: str) -> str:
+        """对密码进行哈希处理（带salt），用于API调用"""
+        return AccessPasswordManager._hash_password(password)
     
     @staticmethod
     def initialize():
@@ -75,6 +81,15 @@ class AccessPasswordManager:
         stored_hash = AccessPasswordManager.load_password_hash()
         input_hash = AccessPasswordManager._hash_password(password)
         return input_hash == stored_hash
+    
+    @staticmethod
+    def verify_hash(access_hash: str) -> bool:
+        """验证hash值是否正确（用于API鉴权）"""
+        if not access_hash:
+            return False
+        
+        stored_hash = AccessPasswordManager.load_password_hash()
+        return access_hash == stored_hash
     
     @staticmethod
     def get_password_hash(password: str) -> str:

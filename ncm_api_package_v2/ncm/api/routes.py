@@ -78,16 +78,27 @@ def create_json_response(content, status_code=200):
         del response.headers["content-length"]
     return response
 
-def verify_access_password(access_password: str = Cookie(None)) -> bool:
-    """验证访问密码"""
-    if not access_password:
-        return False
-    return AccessPasswordManager.verify_password(access_password)
+def verify_access_password(access_password: str = Cookie(None), access_hash: str = None) -> bool:
+    """
+    验证访问密码或hash
+    支持两种方式：
+    1. Cookie中的hash值
+    2. URL参数中的access_hash
+    """
+    # 优先使用URL参数中的access_hash
+    if access_hash:
+        return AccessPasswordManager.verify_hash(access_hash)
+    
+    # 其次使用Cookie中的hash值
+    if access_password:
+        return AccessPasswordManager.verify_hash(access_password)
+    
+    return False
 
 @router.get("/")
-async def root(access_password: str = Cookie(None)):
+async def root(access_password: str = Cookie(None), access_hash: str = Query(None)):
     """返回可视化Web界面（需要密码验证）"""
-    if not verify_access_password(access_password):
+    if not verify_access_password(access_password, access_hash):
         return HTMLResponse(content=get_login_page_html())
     return HTMLResponse(content=get_web_ui_html())
 
@@ -102,10 +113,10 @@ async def verify_password(password: str = Form(...)):
             "message": "验证成功",
             "hash": password_hash  # 返回hash值供API使用
         })
-        # 设置 Cookie，有效期30天
+        # 设置 Cookie，存储hash值而不是明文密码，有效期30天
         response.set_cookie(
             key="access_password",
-            value=password,
+            value=password_hash,  # 存储hash而不是明文
             max_age=30 * 24 * 60 * 60,  # 30天
             httponly=True,
             samesite="lax"
@@ -134,9 +145,9 @@ async def refresh_password(current_password: str = Form(...), access_password: s
         raise HTTPException(status_code=500, detail="密码刷新失败")
 
 @router.get("/auth/check")
-async def check_auth(access_password: str = Cookie(None)):
+async def check_auth(access_password: str = Cookie(None), access_hash: str = Query(None)):
     """检查访问密码是否有效"""
-    if verify_access_password(access_password):
+    if verify_access_password(access_password, access_hash):
         return create_json_response({"code": 200, "message": "已授权", "authorized": True})
     else:
         return create_json_response({"code": 401, "message": "未授权", "authorized": False}, 401)
@@ -810,7 +821,8 @@ async def generate_video_for_vrchat(
     threads: int | None = None,
     gpu_device: str | None = None,
     mv: bool = True,
-    access_password: str = Cookie(None)
+    access_password: str = Cookie(None),
+    access_hash: str = Query(None)
 ):
     """
     13. 生成MP4视频 (VRChat USharpVideo专用) - **需要访问密码**
@@ -825,14 +837,15 @@ async def generate_video_for_vrchat(
         threads: 手动指定FFmpeg线程数，留空让FFmpeg自行分配
         gpu_device: Linux VAAPI 设备路径，例如 /dev/dri/renderD128
         mv: 是否优先尝试获取MV（默认True，设为False跳过MV检查）
-        access_password: 访问密码（通过Cookie传递）
+        access_password: 访问密码hash（通过Cookie传递）
+        access_hash: 访问密码hash（通过URL参数传递，优先级高于Cookie）
         
     返回:
         MP4视频文件流或MV直链重定向
     """
-    # 验证访问密码
-    if not verify_access_password(access_password):
-        raise HTTPException(status_code=403, detail="需要访问密码。请先在Web UI中登录。")
+    # 验证访问密码或hash
+    if not verify_access_password(access_password, access_hash):
+        raise HTTPException(status_code=403, detail="需要访问密码。请先在Web UI中登录，或在URL中提供access_hash参数。")
     
     if not id and not keywords:
         raise HTTPException(status_code=400, detail="必须提供 id 或 keywords 参数")

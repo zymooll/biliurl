@@ -1382,6 +1382,12 @@ HTML_TEMPLATE = r"""
                 level: level
             });
             
+            // 添加access_hash参数
+            const accessHash = localStorage.getItem('access_hash') || getCookie('access_password');
+            if (accessHash) {
+                params.append('access_hash', accessHash);
+            }
+            
             const videoUrl = `/video?${params.toString()}`;
             const fullApiUrl = window.location.origin + videoUrl;
             
@@ -1834,6 +1840,8 @@ HTML_TEMPLATE = r"""
                 if (data.code === 200 && data.hash) {
                     document.getElementById('apiHashValue').value = data.hash;
                     document.getElementById('apiHashDisplay').style.display = 'block';
+                    // 存储hash到localStorage，用于API URL生成
+                    localStorage.setItem('access_hash', data.hash);
                 }
             } catch (error) {
                 console.error('加载API Hash失败:', error);
@@ -2352,6 +2360,8 @@ def get_login_page_html():
                     if (data.hash) {
                         document.getElementById('hashValue').value = data.hash;
                         document.getElementById('hashDisplay').style.display = 'block';
+                        // 存储hash到localStorage
+                        localStorage.setItem('access_hash', data.hash);
                         btnText.innerHTML = '<span class="success-icon">✓</span>验证成功';
                         
                         // 3秒后跳转，给用户时间复制hash
