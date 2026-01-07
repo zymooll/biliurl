@@ -168,6 +168,68 @@ async def logout():
     result = login_handler.Logout()
     return create_json_response(result)
 
+@router.post("/login/sms/send")
+async def send_sms_code(phone: str):
+    """8. 发送短信验证码"""
+    try:
+        result = login_handler.sendSMS(phone)
+        return create_json_response(result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/login/sms/verify")
+async def verify_sms_login(phone: str, captcha: str):
+    """9. 短信验证码登录"""
+    try:
+        result = login_handler.verifySMS(phone, captcha)
+        if result.get("code") == 200:
+            cookie = result.get("cookie")
+            if cookie:
+                save_cookie(cookie)
+                return create_json_response({"code": 200, "message": "登录成功", "cookie": cookie})
+        return create_json_response(result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/login/password")
+async def phone_password_login(phone: str, password: str):
+    """10. 手机号密码登录"""
+    try:
+        result = login_handler.PhonePasswordLogin(phone, password)
+        if result.get("code") == 200:
+            cookie = result.get("cookie")
+            if cookie:
+                save_cookie(cookie)
+                return create_json_response({"code": 200, "message": "登录成功", "cookie": cookie})
+        return create_json_response(result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/cookie/import")
+async def import_cookie(cookie: str):
+    """11. 手动导入 Cookie"""
+    try:
+        if not cookie or len(cookie) < 10:
+            raise HTTPException(status_code=400, detail="Cookie 格式不正确")
+        
+        save_cookie(cookie)
+        return create_json_response({"code": 200, "message": "Cookie 导入成功"})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/cookie/refresh")
+async def refresh_cookie():
+    """12. 刷新 Cookie 缓存"""
+    try:
+        from ncm.utils.cookie import CookieManager
+        cookie = CookieManager.refresh_cache()
+        if cookie:
+            return create_json_response({"code": 200, "message": "Cookie 刷新成功", "cookie": cookie})
+        else:
+            return create_json_response({"code": 404, "message": "未找到 Cookie"}, 404)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/play")
 async def play_song_redirect(
     id: str = None, 

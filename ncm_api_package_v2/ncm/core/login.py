@@ -142,3 +142,44 @@ class LoginProtocol:
         except Exception as e:
             print(f"❌ 退出登录失败: {e}")
             return {"code": -1, "message": str(e)}
+    
+    def sendSMS(self, phone):
+        """发送短信验证码"""
+        url = f"{API_BASE_URL}captcha/sent?phone={phone}"
+        try:
+            response = requests.get(url, timeout=10)
+            return response.json()
+        except Exception as e:
+            print(f"❌ 发送短信失败: {e}")
+            return {"code": -1, "message": str(e)}
+    
+    def verifySMS(self, phone, captcha):
+        """验证短信验证码并登录"""
+        url = f"{API_BASE_URL}captcha/verify?phone={phone}&captcha={captcha}"
+        try:
+            verify_response = requests.get(url, timeout=10)
+            verify_data = verify_response.json()
+            
+            if verify_data.get("code") != 200:
+                return {"code": verify_data.get("code", -1), "message": "验证码错误或登录失败"}
+            
+            # 验证成功后，使用验证码进行登录
+            login_url = f"{API_BASE_URL}login/cellphone?phone={phone}&captcha={captcha}"
+            login_response = requests.get(login_url, timeout=10)
+            login_data = login_response.json()
+            
+            return login_data
+        except Exception as e:
+            print(f"❌ 验证短信失败: {e}")
+            return {"code": -1, "message": str(e)}
+    
+    def PhonePasswordLogin(self, phone, password):
+        """手机号密码登录"""
+        url = f"{API_BASE_URL}login/cellphone?phone={phone}&password={password}"
+        try:
+            response = requests.get(url, timeout=10)
+            response_data = response.json()
+            return response_data
+        except Exception as e:
+            print(f"❌ 密码登录失败: {e}")
+            return {"code": -1, "message": str(e)}

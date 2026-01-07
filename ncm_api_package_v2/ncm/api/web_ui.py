@@ -188,7 +188,7 @@ HTML_TEMPLATE = """
             position: absolute;
             top: 4px;
             left: 4px;
-            width: calc(50% - 1px); /* Half width minus gap */
+            width: calc(33.333% - 2px); /* One third width for 3 tabs */
             height: calc(100% - 8px);
             background: var(--accent-color);
             border-radius: 9999px;
@@ -197,7 +197,11 @@ HTML_TEMPLATE = """
         }
 
         .tabs[data-active="direct"]::before {
-            transform: translateX(calc(100% + 2px));
+            transform: translateX(calc(100% + 4px));
+        }
+
+        .tabs[data-active="login"]::before {
+            transform: translateX(calc(200% + 8px));
         }
 
         .tab-btn {
@@ -555,6 +559,82 @@ HTML_TEMPLATE = """
             transform: translateX(0);
         }
 
+        /* Login Styles */
+        .login-status {
+            padding: 15px;
+            border-radius: 8px;
+            background: rgba(0, 112, 243, 0.1);
+            border: 1px solid rgba(0, 112, 243, 0.3);
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .login-status.success {
+            background: rgba(16, 185, 129, 0.1);
+            border-color: rgba(16, 185, 129, 0.3);
+        }
+
+        .login-status.error {
+            background: rgba(239, 68, 68, 0.1);
+            border-color: rgba(239, 68, 68, 0.3);
+        }
+
+        .login-methods {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .login-method-btn {
+            flex: 1;
+            min-width: 100px;
+            padding: 10px 16px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-color);
+            color: var(--text-primary);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: var(--transition);
+        }
+
+        .login-method-btn:hover {
+            background: var(--accent-color);
+            color: #fff;
+            border-color: var(--accent-color);
+        }
+
+        .login-method-btn.active {
+            background: var(--accent-color);
+            color: #fff;
+            border-color: var(--accent-color);
+        }
+
+        [data-theme="dark"] .login-method-btn.active {
+            background: var(--accent-color);
+            color: #000;
+        }
+
+        .login-section {
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        #qrCodeContainer {
+            border: 2px solid var(--border-color);
+        }
+
         /* Video Player */
         .video-container {
             border-radius: 12px;
@@ -832,11 +912,78 @@ HTML_TEMPLATE = """
     <div class="tabs" data-active="search">
         <button id="btnSearch" class="tab-btn active" onclick="switchMode('search')">关键词搜索</button>
         <button id="btnDirect" class="tab-btn" onclick="switchMode('direct')">歌曲ID播放</button>
+        <button id="btnLogin" class="tab-btn" onclick="switchMode('login')">登录管理</button>
     </div>
 
     <div class="container">
+        <!-- Login Card -->
+        <div id="loginCard" class="card" style="display: none;">
+            <h2 style="margin-bottom: 20px; font-size: 1.5rem;">网易云音乐登录</h2>
+            
+            <!-- Login Status -->
+            <div id="loginStatus" class="login-status">
+                <p id="loginStatusText">检查登录状态中...</p>
+            </div>
+
+            <!-- Login Method Selector -->
+            <div class="login-methods">
+                <button class="login-method-btn active" onclick="selectLoginMethod('qr')">扫码登录</button>
+                <button class="login-method-btn" onclick="selectLoginMethod('sms')">短信登录</button>
+                <button class="login-method-btn" onclick="selectLoginMethod('password')">密码登录</button>
+                <button class="login-method-btn" onclick="selectLoginMethod('cookie')">导入Cookie</button>
+            </div>
+
+            <!-- QR Code Login -->
+            <div id="qrLoginSection" class="login-section">
+                <div style="text-align: center;">
+                    <div id="qrCodeContainer" style="display: inline-block; padding: 20px; background: white; border-radius: 8px; margin: 20px 0;">
+                        <img id="qrCodeImage" src="" alt="二维码加载中..." style="width: 200px; height: 200px;">
+                    </div>
+                    <p id="qrTip" style="color: var(--text-secondary); margin-top: 10px;">请使用网易云音乐APP扫码登录</p>
+                    <button class="btn btn-primary" onclick="startQRLogin()" style="margin-top: 10px;">刷新二维码</button>
+                </div>
+            </div>
+
+            <!-- SMS Login -->
+            <div id="smsLoginSection" class="login-section" style="display: none;">
+                <div class="input-group" style="flex-direction: column; gap: 15px;">
+                    <input type="tel" id="smsPhone" class="input" placeholder="请输入手机号" maxlength="11">
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn btn-secondary" onclick="sendSMSCode()" id="smsSendBtn">发送验证码</button>
+                    </div>
+                    <input type="text" id="smsCaptcha" class="input" placeholder="请输入验证码" maxlength="6">
+                    <button class="btn btn-primary" onclick="verifySMSLogin()">登录</button>
+                </div>
+            </div>
+
+            <!-- Password Login -->
+            <div id="passwordLoginSection" class="login-section" style="display: none;">
+                <div class="input-group" style="flex-direction: column; gap: 15px;">
+                    <input type="tel" id="pwdPhone" class="input" placeholder="请输入手机号" maxlength="11">
+                    <input type="password" id="pwdPassword" class="input" placeholder="请输入密码">
+                    <button class="btn btn-primary" onclick="passwordLogin()">登录</button>
+                </div>
+            </div>
+
+            <!-- Cookie Import -->
+            <div id="cookieLoginSection" class="login-section" style="display: none;">
+                <div class="input-group" style="flex-direction: column; gap: 15px;">
+                    <textarea id="cookieInput" class="input" placeholder="请粘贴完整的Cookie字符串" style="min-height: 100px; resize: vertical; font-family: monospace; font-size: 12px;"></textarea>
+                    <button class="btn btn-primary" onclick="importCookie()">导入Cookie</button>
+                    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 10px;">
+                        💡 提示：从浏览器开发者工具中复制Cookie，格式如：MUSIC_U=...; __csrf=...
+                    </p>
+                </div>
+            </div>
+
+            <!-- Logout Button -->
+            <div id="logoutSection" style="display: none; margin-top: 20px;">
+                <button class="btn btn-secondary" onclick="logout()" style="width: 100%;">退出登录</button>
+            </div>
+        </div>
+
         <!-- Search Card -->
-        <div class="card">
+        <div class="card" id="searchCard">
             <div class="input-group">
                 <div class="input-wrapper">
                     <span class="search-icon-placeholder">
@@ -966,30 +1113,48 @@ HTML_TEMPLATE = """
             currentMode = mode;
             const btnSearch = document.getElementById('btnSearch');
             const btnDirect = document.getElementById('btnDirect');
+            const btnLogin = document.getElementById('btnLogin');
+            const searchCard = document.getElementById('searchCard');
+            const loginCard = document.getElementById('loginCard');
             const searchInput = document.getElementById('searchInput');
             const actionButton = document.getElementById('actionButton');
             const resultsDiv = document.getElementById('results');
             const tabs = document.querySelector('.tabs');
             
+            // Remove active from all buttons
+            btnSearch.classList.remove('active');
+            btnDirect.classList.remove('active');
+            btnLogin.classList.remove('active');
+            
+            // Hide all cards
+            searchCard.style.display = 'none';
+            loginCard.style.display = 'none';
+            resultsDiv.style.display = 'none';
+            
             if (mode === 'search') {
                 btnSearch.classList.add('active');
-                btnDirect.classList.remove('active');
+                searchCard.style.display = 'block';
                 tabs.setAttribute('data-active', 'search');
                 searchInput.placeholder = '输入歌曲名或歌手名...';
                 actionButton.innerHTML = '查找视频';
                 searchInput.type = 'text';
-            } else {
-                btnSearch.classList.remove('active');
+                searchInput.value = '';
+                searchInput.focus();
+            } else if (mode === 'direct') {
                 btnDirect.classList.add('active');
+                searchCard.style.display = 'block';
                 tabs.setAttribute('data-active', 'direct');
                 searchInput.placeholder = '输入歌曲 ID (例如: 1330944279)';
                 actionButton.innerHTML = '播放歌曲';
                 searchInput.type = 'number';
-                resultsDiv.style.display = 'none';
+                searchInput.value = '';
+                searchInput.focus();
+            } else if (mode === 'login') {
+                btnLogin.classList.add('active');
+                loginCard.style.display = 'block';
+                tabs.setAttribute('data-active', 'login');
+                checkLoginStatus();
             }
-            
-            searchInput.value = '';
-            searchInput.focus();
         }
         
         async function handleAction() {
@@ -1296,6 +1461,263 @@ HTML_TEMPLATE = """
                 }
             });
         });
+
+        // ============ Login Functions ============
+        let qrCheckInterval = null;
+        let smsSendCountdown = 0;
+
+        async function checkLoginStatus() {
+            const statusDiv = document.getElementById('loginStatus');
+            const statusText = document.getElementById('loginStatusText');
+            const logoutSection = document.getElementById('logoutSection');
+            
+            try {
+                const response = await fetch('/user/info');
+                const data = await response.json();
+                
+                if (data.code === 200 && data.profile) {
+                    statusDiv.className = 'login-status success';
+                    statusText.textContent = `✅ 已登录：${data.profile.nickname} (UID: ${data.account.id})`;
+                    logoutSection.style.display = 'block';
+                } else {
+                    statusDiv.className = 'login-status';
+                    statusText.textContent = '未登录，请选择登录方式';
+                    logoutSection.style.display = 'none';
+                }
+            } catch (error) {
+                statusDiv.className = 'login-status';
+                statusText.textContent = '未登录，请选择登录方式';
+                logoutSection.style.display = 'none';
+            }
+        }
+
+        function selectLoginMethod(method) {
+            // Hide all sections
+            document.getElementById('qrLoginSection').style.display = 'none';
+            document.getElementById('smsLoginSection').style.display = 'none';
+            document.getElementById('passwordLoginSection').style.display = 'none';
+            document.getElementById('cookieLoginSection').style.display = 'none';
+            
+            // Remove active from all buttons
+            document.querySelectorAll('.login-method-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Show selected section and mark button as active
+            event.target.classList.add('active');
+            
+            if (method === 'qr') {
+                document.getElementById('qrLoginSection').style.display = 'block';
+                startQRLogin();
+            } else if (method === 'sms') {
+                document.getElementById('smsLoginSection').style.display = 'block';
+            } else if (method === 'password') {
+                document.getElementById('passwordLoginSection').style.display = 'block';
+            } else if (method === 'cookie') {
+                document.getElementById('cookieLoginSection').style.display = 'block';
+            }
+        }
+
+        async function startQRLogin() {
+            const qrImage = document.getElementById('qrCodeImage');
+            const qrTip = document.getElementById('qrTip');
+            
+            try {
+                qrTip.textContent = '正在生成二维码...';
+                
+                // Stop existing check interval
+                if (qrCheckInterval) {
+                    clearInterval(qrCheckInterval);
+                }
+                
+                // Get QR key
+                const keyResponse = await fetch('/login/qr/key');
+                const keyData = await keyResponse.json();
+                
+                if (keyData.code !== 200) {
+                    throw new Error('获取二维码Key失败');
+                }
+                
+                const qrKey = keyData.unikey;
+                
+                // Get QR code image
+                const qrResponse = await fetch(\`/login/qr/create?key=\${qrKey}\`);
+                const qrData = await qrResponse.json();
+                
+                if (qrData.code !== 200) {
+                    throw new Error('生成二维码失败');
+                }
+                
+                qrImage.src = qrData.qrimg;
+                qrTip.textContent = '请使用网易云音乐APP扫码登录';
+                
+                // Start checking QR status
+                qrCheckInterval = setInterval(async () => {
+                    try {
+                        const checkResponse = await fetch(\`/login/qr/check?key=\${qrKey}\`);
+                        const checkData = await checkResponse.json();
+                        
+                        if (checkData.code === 800) {
+                            clearInterval(qrCheckInterval);
+                            qrTip.textContent = '❌ 二维码已过期，请刷新';
+                            qrTip.style.color = '#ef4444';
+                        } else if (checkData.code === 801) {
+                            qrTip.textContent = '⌛ 等待扫码中...';
+                            qrTip.style.color = 'var(--text-secondary)';
+                        } else if (checkData.code === 802) {
+                            qrTip.textContent = '📱 已扫码，请在手机上确认...';
+                            qrTip.style.color = '#0070f3';
+                        } else if (checkData.code === 803) {
+                            clearInterval(qrCheckInterval);
+                            qrTip.textContent = '✅ 登录成功！';
+                            qrTip.style.color = '#10b981';
+                            setTimeout(() => {
+                                checkLoginStatus();
+                            }, 1000);
+                        }
+                    } catch (error) {
+                        console.error('检查二维码状态失败:', error);
+                    }
+                }, 2000);
+                
+            } catch (error) {
+                qrTip.textContent = '❌ ' + error.message;
+                qrTip.style.color = '#ef4444';
+            }
+        }
+
+        async function sendSMSCode() {
+            const phone = document.getElementById('smsPhone').value.trim();
+            const sendBtn = document.getElementById('smsSendBtn');
+            
+            if (!phone || phone.length !== 11) {
+                alert('请输入有效的11位手机号');
+                return;
+            }
+            
+            if (smsSendCountdown > 0) {
+                return;
+            }
+            
+            try {
+                sendBtn.disabled = true;
+                const response = await fetch(\`/login/sms/send?phone=\${phone}\`, { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.code === 200) {
+                    alert('验证码已发送，请查收短信');
+                    smsSendCountdown = 60;
+                    
+                    const interval = setInterval(() => {
+                        smsSendCountdown--;
+                        sendBtn.textContent = \`\${smsSendCountdown}秒后重试\`;
+                        
+                        if (smsSendCountdown <= 0) {
+                            clearInterval(interval);
+                            sendBtn.textContent = '发送验证码';
+                            sendBtn.disabled = false;
+                        }
+                    }, 1000);
+                } else {
+                    alert('发送失败：' + (data.message || '未知错误'));
+                    sendBtn.disabled = false;
+                }
+            } catch (error) {
+                alert('发送失败：' + error.message);
+                sendBtn.disabled = false;
+            }
+        }
+
+        async function verifySMSLogin() {
+            const phone = document.getElementById('smsPhone').value.trim();
+            const captcha = document.getElementById('smsCaptcha').value.trim();
+            
+            if (!phone || !captcha) {
+                alert('请输入手机号和验证码');
+                return;
+            }
+            
+            try {
+                const response = await fetch(\`/login/sms/verify?phone=\${phone}&captcha=\${captcha}\`, { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.code === 200) {
+                    alert('登录成功！');
+                    checkLoginStatus();
+                } else {
+                    alert('登录失败：' + (data.message || '验证码错误'));
+                }
+            } catch (error) {
+                alert('登录失败：' + error.message);
+            }
+        }
+
+        async function passwordLogin() {
+            const phone = document.getElementById('pwdPhone').value.trim();
+            const password = document.getElementById('pwdPassword').value.trim();
+            
+            if (!phone || !password) {
+                alert('请输入手机号和密码');
+                return;
+            }
+            
+            try {
+                const response = await fetch(\`/login/password?phone=\${phone}&password=\${password}\`, { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.code === 200) {
+                    alert('登录成功！');
+                    checkLoginStatus();
+                } else {
+                    alert('登录失败：' + (data.message || '账号或密码错误'));
+                }
+            } catch (error) {
+                alert('登录失败：' + error.message);
+            }
+        }
+
+        async function importCookie() {
+            const cookie = document.getElementById('cookieInput').value.trim();
+            
+            if (!cookie || cookie.length < 10) {
+                alert('请输入有效的Cookie');
+                return;
+            }
+            
+            try {
+                const response = await fetch(\`/cookie/import?cookie=\${encodeURIComponent(cookie)}\`, { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.code === 200) {
+                    alert('Cookie 导入成功！');
+                    checkLoginStatus();
+                } else {
+                    alert('导入失败：' + (data.message || '未知错误'));
+                }
+            } catch (error) {
+                alert('导入失败：' + error.message);
+            }
+        }
+
+        async function logout() {
+            if (!confirm('确定要退出登录吗？')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/logout');
+                const data = await response.json();
+                
+                if (data.code === 200 || data.code === -1) {
+                    alert('已退出登录');
+                    checkLoginStatus();
+                } else {
+                    alert('退出失败：' + (data.message || '未知错误'));
+                }
+            } catch (error) {
+                alert('退出失败：' + error.message);
+            }
+        }
 
         window.onload = function() {
             initTheme();
