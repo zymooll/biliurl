@@ -44,6 +44,11 @@ HTML_TEMPLATE = """
             -webkit-font-smoothing: antialiased;
         }
 
+        html {
+            background-color: var(--bg-color);
+            transition: background-color 0.3s ease;
+        }
+
         /* Mouse glow effect for dark mode */
         [data-theme="dark"] body::before {
             content: '';
