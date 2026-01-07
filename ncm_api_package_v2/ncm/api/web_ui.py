@@ -78,7 +78,7 @@ HTML_TEMPLATE = r"""
 
         .container {
             width: 100%;
-            max-width: 900px;
+            max-width: 1200px;
             margin: 0 auto;
             padding-bottom: 80px; /* Prevent content from being hidden by floating tabs */
         }
