@@ -189,7 +189,7 @@ HTML_TEMPLATE = r"""
             position: absolute;
             top: 4px;
             left: 4px;
-            width: calc(33.333% - 2px); /* One third width for 3 tabs */
+            width: calc(25% - 2px); /* One fourth width for 4 tabs */
             height: calc(100% - 8px);
             background: var(--accent-color);
             border-radius: 9999px;
@@ -201,8 +201,12 @@ HTML_TEMPLATE = r"""
             transform: translateX(calc(100% + 4px));
         }
 
-        .tabs[data-active="login"]::before {
+        .tabs[data-active="playlist"]::before {
             transform: translateX(calc(200% + 8px));
+        }
+
+        .tabs[data-active="login"]::before {
+            transform: translateX(calc(300% + 12px));
         }
 
         .tab-btn {
@@ -931,6 +935,7 @@ HTML_TEMPLATE = r"""
     <div class="tabs" data-active="search">
         <button id="btnSearch" class="tab-btn active" onclick="switchMode('search')">关键词搜索</button>
         <button id="btnDirect" class="tab-btn" onclick="switchMode('direct')">歌曲ID播放</button>
+        <button id="btnPlaylist" class="tab-btn" onclick="switchMode('playlist')">歌单播放</button>
         <button id="btnLogin" class="tab-btn" onclick="switchMode('login')">登录管理</button>
     </div>
 
@@ -1078,6 +1083,67 @@ HTML_TEMPLATE = r"""
             </div>
         </div>
 
+        <!-- Playlist Card -->
+        <div class="card" id="playlistCard" style="display: none;">
+            <h2 style="margin-bottom: 20px; font-size: 1.5rem;">🎵 歌单播放</h2>
+            <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 20px;">
+                输入网易云音乐歌单链接或歌单ID，获取歌单中的所有歌曲
+            </p>
+            
+            <div class="input-group">
+                <div class="input-wrapper">
+                    <span class="search-icon-placeholder">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+                    </span>
+                    <input 
+                        type="text" 
+                        id="playlistInput" 
+                        class="input" 
+                        placeholder="输入歌单链接或ID，如: https://music.163.com/playlist?id=123456 或 123456"
+                        onkeypress="if(event.key==='Enter') loadPlaylist()"
+                    >
+                </div>
+                <button class="btn btn-primary" onclick="loadPlaylist()">
+                    加载歌单
+                </button>
+            </div>
+
+            <!-- Playlist Info -->
+            <div id="playlistInfo" style="display: none; margin-top: 20px; padding: 15px; background: rgba(0, 112, 243, 0.05); border: 2px solid rgba(0, 112, 243, 0.2); border-radius: 8px;">
+                <div style="display: flex; gap: 15px; align-items: start;">
+                    <img id="playlistCover" src="" alt="歌单封面" style="width: 80px; height: 80px; border-radius: 8px; object-fit: cover;">
+                    <div style="flex: 1;">
+                        <h3 id="playlistName" style="margin-bottom: 5px; font-size: 1.1rem;"></h3>
+                        <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 5px;">
+                            <span id="playlistCreator"></span> • <span id="playlistCount"></span> 首歌曲
+                        </p>
+                        <p style="color: var(--text-secondary); font-size: 0.85rem;">
+                            播放次数: <span id="playlistPlayCount"></span>
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Playlist Songs List -->
+            <div id="playlistSongs" style="display: none; margin-top: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h3 style="font-size: 1.1rem;">歌曲列表</h3>
+                    <button class="btn btn-secondary" onclick="playAllPlaylistSongs()" style="font-size: 0.85rem; padding: 8px 16px;">
+                        ▶️ 播放全部
+                    </button>
+                </div>
+                <div id="playlistSongList" class="song-list">
+                    <!-- Playlist songs will be injected here -->
+                </div>
+            </div>
+
+            <!-- Loading State -->
+            <div id="playlistLoading" style="display: none; text-align: center; padding: 40px 0;">
+                <div class="spinner" style="margin: 0 auto 15px;"></div>
+                <p style="color: var(--text-secondary);">正在加载歌单...</p>
+            </div>
+        </div>
+
         <!-- Player Card -->
         <div id="videoPlayer" class="video-container">
             <video id="video" controls autoplay></video>
@@ -1169,8 +1235,10 @@ HTML_TEMPLATE = r"""
             currentMode = mode;
             const btnSearch = document.getElementById('btnSearch');
             const btnDirect = document.getElementById('btnDirect');
+            const btnPlaylist = document.getElementById('btnPlaylist');
             const btnLogin = document.getElementById('btnLogin');
             const searchCard = document.getElementById('searchCard');
+            const playlistCard = document.getElementById('playlistCard');
             const loginCard = document.getElementById('loginCard');
             const searchInput = document.getElementById('searchInput');
             const actionButton = document.getElementById('actionButton');
@@ -1180,10 +1248,12 @@ HTML_TEMPLATE = r"""
             // Remove active from all buttons
             btnSearch.classList.remove('active');
             btnDirect.classList.remove('active');
+            btnPlaylist.classList.remove('active');
             btnLogin.classList.remove('active');
             
             // Hide all cards
             searchCard.style.display = 'none';
+            playlistCard.style.display = 'none';
             loginCard.style.display = 'none';
             resultsDiv.style.display = 'none';
             
@@ -1205,6 +1275,11 @@ HTML_TEMPLATE = r"""
                 searchInput.type = 'text';  // 改为text类型以接受URL
                 searchInput.value = '';
                 searchInput.focus();
+            } else if (mode === 'playlist') {
+                btnPlaylist.classList.add('active');
+                playlistCard.style.display = 'block';
+                tabs.setAttribute('data-active', 'playlist');
+                document.getElementById('playlistInput').focus();
             } else if (mode === 'login') {
                 btnLogin.classList.add('active');
                 loginCard.style.display = 'block';
@@ -1958,6 +2033,146 @@ HTML_TEMPLATE = r"""
             const parts = value.split(`; ${name}=`);
             if (parts.length === 2) return parts.pop().split(';').shift();
             return null;
+        }
+
+        // ===== Playlist Functions =====
+        let currentPlaylistSongs = [];
+
+        async function loadPlaylist() {
+            const input = document.getElementById('playlistInput').value.trim();
+            if (!input) {
+                alert('请输入歌单链接或ID');
+                return;
+            }
+
+            const loadingDiv = document.getElementById('playlistLoading');
+            const infoDiv = document.getElementById('playlistInfo');
+            const songsDiv = document.getElementById('playlistSongs');
+
+            // Show loading
+            loadingDiv.style.display = 'block';
+            infoDiv.style.display = 'none';
+            songsDiv.style.display = 'none';
+
+            try {
+                const response = await fetch(`/playlist/tracks?id=${encodeURIComponent(input)}`);
+                const data = await response.json();
+
+                if (data.code === 200) {
+                    currentPlaylistSongs = data.songs || [];
+                    displayPlaylistInfo(data.playlist_info);
+                    displayPlaylistSongs(currentPlaylistSongs);
+                    
+                    infoDiv.style.display = 'block';
+                    songsDiv.style.display = 'block';
+                } else {
+                    alert('获取歌单失败: ' + (data.message || '未知错误'));
+                }
+            } catch (error) {
+                console.error('Error loading playlist:', error);
+                alert('加载歌单时出错: ' + error.message);
+            } finally {
+                loadingDiv.style.display = 'none';
+            }
+        }
+
+        function displayPlaylistInfo(info) {
+            document.getElementById('playlistCover').src = info.coverImgUrl || '';
+            document.getElementById('playlistName').textContent = info.name || '未知歌单';
+            document.getElementById('playlistCreator').textContent = info.creator || '未知';
+            document.getElementById('playlistCount').textContent = info.trackCount || 0;
+            document.getElementById('playlistPlayCount').textContent = (info.playCount || 0).toLocaleString();
+        }
+
+        function displayPlaylistSongs(songs) {
+            const listDiv = document.getElementById('playlistSongList');
+            listDiv.innerHTML = '';
+
+            songs.forEach((song, index) => {
+                const artists = song.ar?.map(ar => ar.name).join(', ') || '未知';
+                const duration = song.dt ? Math.floor(song.dt / 1000) : 0;
+                const minutes = Math.floor(duration / 60);
+                const seconds = duration % 60;
+                const durationStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+                const songItem = document.createElement('div');
+                songItem.className = 'song-item';
+                songItem.innerHTML = `
+                    <div class="song-number">${index + 1}</div>
+                    <div class="song-info">
+                        <div class="song-title">${song.name || '未知歌曲'}</div>
+                        <div class="song-artist">${artists} • ${song.al?.name || '未知专辑'}</div>
+                    </div>
+                    <div class="song-duration">${durationStr}</div>
+                    <div class="song-actions">
+                        <button class="btn-action" onclick="playPlaylistSong(${song.id})" title="播放">▶</button>
+                        <button class="btn-action" onclick="viewSongInfo(${song.id})" title="详情">ℹ</button>
+                    </div>
+                `;
+                listDiv.appendChild(songItem);
+            });
+        }
+
+        async function playPlaylistSong(songId) {
+            try {
+                const useMv = document.getElementById('optionMv')?.checked ?? true;
+                const useGpu = document.getElementById('optionGpu')?.checked ?? true;
+                const level = document.getElementById('optionLevel')?.value || 'standard';
+
+                const params = new URLSearchParams({
+                    id: songId,
+                    use_mv: useMv,
+                    use_gpu: useGpu,
+                    level: level
+                });
+
+                const response = await fetch(`/stream?${params.toString()}`);
+                const data = await response.json();
+
+                if (data.url) {
+                    const videoPlayer = document.getElementById('video');
+                    videoPlayer.src = data.url;
+                    videoPlayer.play();
+
+                    // Update API URL display
+                    const apiUrl = `${window.location.origin}/stream?${params.toString()}`;
+                    document.getElementById('apiUrl').value = apiUrl;
+
+                    // Show video player
+                    document.getElementById('videoPlayer').style.display = 'block';
+
+                    // Scroll to video
+                    document.getElementById('videoPlayer').scrollIntoView({ behavior: 'smooth' });
+                } else {
+                    alert('无法播放: ' + (data.error || '未知错误'));
+                }
+            } catch (error) {
+                console.error('Error playing song:', error);
+                alert('播放失败: ' + error.message);
+            }
+        }
+
+        function playAllPlaylistSongs() {
+            if (currentPlaylistSongs.length === 0) {
+                alert('歌单为空');
+                return;
+            }
+            // Play first song
+            playPlaylistSong(currentPlaylistSongs[0].id);
+            alert(`将播放 ${currentPlaylistSongs.length} 首歌曲（当前播放第一首，其他歌曲需要手动点击播放）`);
+        }
+
+        function viewSongInfo(songId) {
+            const song = currentPlaylistSongs.find(s => s.id === songId);
+            if (!song) return;
+
+            const artists = song.ar?.map(ar => ar.name).join(', ') || '未知';
+            const album = song.al?.name || '未知专辑';
+            const duration = song.dt ? Math.floor(song.dt / 1000) : 0;
+            const minutes = Math.floor(duration / 60);
+            const seconds = duration % 60;
+
+            alert(`歌曲信息:\n\n名称: ${song.name}\n歌手: ${artists}\n专辑: ${album}\n时长: ${minutes}:${seconds.toString().padStart(2, '0')}\nID: ${songId}`);
         }
 
         window.onload = function() {
