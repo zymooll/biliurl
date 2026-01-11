@@ -1235,6 +1235,25 @@ async def generate_video_for_vrchat(
             return FileResponse(
                 video_path,
                 media_type="video/mp4",
+                filename=f"{song_name} - {artist_name}.mp4",
+                headers={
+                    "Accept-Ranges": "bytes",
+                    "Cache-Control": "public, max-age=86400"  # 缓存1天
+                }
+            )
+        
+        lyrics_data = (lyric_data.get("data") or {}).get("lyrics") or {}
+        lrc_obj = lyrics_data.get("lrc") or {}
+        tlyric_obj = lyrics_data.get("tlyric") or {}
+        lrc = lrc_obj.get("lyric") if isinstance(lrc_obj, dict) else None
+        tlyric = tlyric_obj.get("lyric") if isinstance(tlyric_obj, dict) else None
+        
+        print(f"📝 歌词结构: lyrics_data类型={type(lyrics_data)}, lrc_obj类型={type(lrc_obj)}")
+        print(f"📝 歌词数据: lrc={'存在' if lrc else '空'} ({len(lrc) if lrc else 0} 字符), tlyric={'存在' if tlyric else '空'} ({len(tlyric) if tlyric else 0} 字符)")
+        
+        if not lrc:
+            print("⚠️ 歌词内容为空，使用简化模式 - 使用线程池")
+            loop = asyncio.get_event_loop()
             try:
                 video_path = await asyncio.wait_for(
                     loop.run_in_executor(
@@ -1265,21 +1284,21 @@ async def generate_video_for_vrchat(
             
             file_size = os.path.getsize(video_path)
             print(f"📦 返回视频文件: {video_path} ({file_size / 1024 / 1024:.2f} MB)")
-            c = tlyric_obj.get("lyric") if isinstance(tlyric_obj, dict) else None
+            
+            # 视频已持久化存储，无需清理
+            return FileResponse(
+                video_path,
+                media_type="video/mp4",
+                filename=f"{song_name} - {artist_name}.mp4",
+                headers={
+                    "Accept-Ranges": "bytes",
+                    "Cache-Control": "public, max-age=86400"  # 缓存1天
+                }
+            )
         
-        print(f"📝 歌词结构: lyrics_data类型={type(lyrics_data)}, lrc_obj类型={type(lrc_obj)}")
-        print(f"📝 歌词数据: lrc={'存在' if lrc else '空'} ({len(lrc) if lrc else 0} 字符), tlyric={'存在' if tlyric else '空'} ({len(tlyric) if tlyric else 0} 字符)")
-        
-        if not lrc:
-            print("⚠️ 歌词内容为空，使用简化模式 - 使用线程池")
-            loop = asyncio.get_event_loop()
-            video_path = await loop.run_in_executor(
-                video_executor,
-                VideoGenerator.generate_video_simple,
-                audio_url,
-                cover_url,
-                None,
-                use_gpu,
+        # 5. 生成完整视频（带字幕）- 在线程池中异步执行
+        print("🎬 生成完整视频（带字幕）- 使用线程池")
+        loop = asyncio.get_event_loop()
         try:
             # 添加超时保护（最多10分钟，因为带字幕的视频生成更慢）
             video_path = await asyncio.wait_for(
@@ -1317,26 +1336,7 @@ async def generate_video_for_vrchat(
         print(f"📦 视频文件大小: {file_size / 1024 / 1024:.2f} MB")
         elapsed = time.time() - request_start_time
         print(f"✅ [视频请求] 处理完成，总耗时: {elapsed:.2f}秒")
-        print(f"{'='*60}\n
-            audio_url,
-            cover_url,
-            lrc,
-            tlyric,
-            song_name,
-            artist_name,
-            use_gpu,
-            thread_count,
-            gpu_device,
-            song_id,
-            level
-        )
-        
-        # 6. 返回视频文件
-        if not os.path.exists(video_path):
-            raise HTTPException(status_code=500, detail="视频文件生成失败")
-        
-        file_size = os.path.getsize(video_path)
-        print(f"📦 视频文件大小: {file_size} bytes")
+        print(f"{'='*60}\n")
         
         # 视频已持久化存储，无需清理
         # 使用 FileResponse 直接返回文件
