@@ -204,4 +204,139 @@ class UserInteractive:
         except Exception as e:
             print(f"❌ 获取歌曲详情失败: {e}")
             return {"code": 500, "message": str(e)}
+    
+    @staticmethod
+    def getPlaylistDetail(playlist_id, cookie=None):
+        """
+        获取歌单详情
+        
+        参数:
+            playlist_id: 歌单ID
+            cookie: 用户cookie（可选，登录后可获取完整歌单）
+        
+        返回:
+            包含歌单信息的字典，其中：
+            - playlist.trackIds: 完整的歌曲ID列表
+            - playlist.tracks: 部分歌曲详情（未登录状态可能不完整）
+        """
+        try:
+            if not cookie:
+                cookie = load_cookie()
+            
+            url = f"{API_BASE_URL}playlist/detail"
+            params = {"id": playlist_id}
+            
+            if cookie:
+                params["cookie"] = cookie
+            
+            print(f"📡 正在获取歌单详情: ID={playlist_id}")
+            response = requests.get(url, params=params, timeout=30)
+            data = response.json()
+            
+            if data.get('code') == 200:
+                playlist = data.get('playlist', {})
+                track_count = playlist.get('trackCount', 0)
+                track_ids_count = len(playlist.get('trackIds', []))
+                print(f"✅ 歌单获取成功: {playlist.get('name', '未知')} (共{track_count}首，trackIds: {track_ids_count})")
+            
+            return data
+        except Exception as e:
+            print(f"❌ 获取歌单详情失败: {e}")
+            return {"code": 500, "message": str(e)}
+    
+    @staticmethod
+    def getPlaylistTracks(playlist_id, cookie=None):
+        """
+        获取歌单的所有歌曲详情（完整版本）
+        
+        先调用 playlist/detail 获取所有trackIds，
+        然后批量调用 song/detail 获取完整歌曲信息
+        
+        参数:
+            playlist_id: 歌单ID
+            cookie: 用户cookie（可选）
+        
+        返回:
+            {
+                "code": 200,
+                "playlist_info": {...},  # 歌单基本信息
+                "songs": [...],          # 完整的歌曲列表
+                "total": 10              # 歌曲总数
+            }
+        """
+        try:
+            # 1. 获取歌单详情
+            playlist_data = UserInteractive.getPlaylistDetail(playlist_id, cookie)
+            
+            if playlist_data.get('code') != 200:
+                return playlist_data
+            
+            playlist = playlist_data.get('playlist', {})
+            track_ids = [item.get('id') for item in playlist.get('trackIds', [])]
+            
+            if not track_ids:
+                return {
+                    "code": 200,
+                    "playlist_info": {
+                        "id": playlist.get('id'),
+                        "name": playlist.get('name'),
+                        "creator": playlist.get('creator', {}).get('nickname'),
+                        "coverImgUrl": playlist.get('coverImgUrl'),
+                        "playCount": playlist.get('playCount'),
+                        "trackCount": playlist.get('trackCount'),
+                    },
+                    "songs": [],
+                    "total": 0
+                }
+            
+            # 2. 批量获取歌曲详情（一次最多获取1000首）
+            print(f"📋 准备批量获取 {len(track_ids)} 首歌曲的详细信息...")
+            
+            # 将ID列表分批处理（每批最多1000个）
+            batch_size = 1000
+            all_songs = []
+            
+            for i in range(0, len(track_ids), batch_size):
+                batch_ids = track_ids[i:i+batch_size]
+                ids_str = ','.join(map(str, batch_ids))
+                
+                url = f"{API_BASE_URL}song/detail"
+                params = {"ids": ids_str}
+                
+                if cookie:
+                    params["cookie"] = cookie
+                
+                print(f"🔄 正在获取第 {i//batch_size + 1} 批歌曲 ({len(batch_ids)} 首)...")
+                response = requests.get(url, params=params, timeout=30)
+                batch_data = response.json()
+                
+                if batch_data.get('code') == 200:
+                    songs = batch_data.get('songs', [])
+                    all_songs.extend(songs)
+                    print(f"✅ 第 {i//batch_size + 1} 批获取成功: {len(songs)} 首")
+                else:
+                    print(f"⚠️ 第 {i//batch_size + 1} 批获取失败")
+            
+            # 3. 返回完整数据
+            result = {
+                "code": 200,
+                "playlist_info": {
+                    "id": playlist.get('id'),
+                    "name": playlist.get('name'),
+                    "creator": playlist.get('creator', {}).get('nickname'),
+                    "coverImgUrl": playlist.get('coverImgUrl'),
+                    "playCount": playlist.get('playCount'),
+                    "trackCount": playlist.get('trackCount'),
+                    "description": playlist.get('description'),
+                },
+                "songs": all_songs,
+                "total": len(all_songs)
+            }
+            
+            print(f"✅ 歌单处理完成: {result['playlist_info']['name']} (共{result['total']}首)")
+            return result
+            
+        except Exception as e:
+            print(f"❌ 获取歌单歌曲失败: {e}")
+            return {"code": 500, "message": str(e)}
 

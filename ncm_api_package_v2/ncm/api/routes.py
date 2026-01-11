@@ -262,6 +262,82 @@ async def get_song_detail(ids: str):
     data = UserInteractive.getSongDetail(ids)
     return create_json_response(data)
 
+@router.get("/playlist/detail")
+async def get_playlist_detail(id: str):
+    """
+    获取歌单详情
+    
+    参数:
+        id: 歌单ID（必填）
+    
+    返回:
+        歌单详细信息，包括：
+        - playlist.trackIds: 完整的歌曲ID列表
+        - playlist.tracks: 部分歌曲详情（未登录可能不完整）
+    
+    说明:
+        返回的 trackIds 是完整的，但 tracks 可能不完整。
+        如需获取所有歌曲的完整详情，请使用 /playlist/tracks 接口。
+    """
+    cookie = load_cookie()
+    data = UserInteractive.getPlaylistDetail(id, cookie)
+    return create_json_response(data)
+
+@router.get("/playlist/tracks")
+async def get_playlist_tracks(id: str):
+    """
+    获取歌单的所有歌曲详情（完整版）
+    
+    参数:
+        id: 歌单ID或URL（必填）
+    
+    返回:
+        {
+            "code": 200,
+            "playlist_info": {
+                "id": 歌单ID,
+                "name": "歌单名称",
+                "creator": "创建者",
+                "coverImgUrl": "封面图片",
+                "playCount": 播放次数,
+                "trackCount": 歌曲总数
+            },
+            "songs": [
+                {
+                    "id": 歌曲ID,
+                    "name": "歌曲名",
+                    "ar": [{"name": "歌手名"}],
+                    "al": {"name": "专辑名", "picUrl": "封面"},
+                    "dt": 时长(毫秒)
+                },
+                ...
+            ],
+            "total": 歌曲总数
+        }
+    
+    说明:
+        此接口会先获取歌单的所有歌曲ID，然后批量获取完整的歌曲详情。
+        支持传入歌单URL或纯数字ID。
+    """
+    import re
+    
+    # 从URL或纯数字中提取歌单ID
+    playlist_id = id
+    if not id.isdigit():
+        # 尝试从URL中提取id参数
+        match = re.search(r'[?&]id=(\d+)', id)
+        if match:
+            playlist_id = match.group(1)
+        else:
+            return create_json_response({
+                "code": 400,
+                "message": "无效的歌单ID或URL"
+            }, 400)
+    
+    cookie = load_cookie()
+    data = UserInteractive.getPlaylistTracks(playlist_id, cookie)
+    return create_json_response(data)
+
 @router.get("/logout")
 async def logout():
     """7. 退出登录"""
