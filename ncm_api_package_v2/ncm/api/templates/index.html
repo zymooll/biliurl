@@ -295,23 +295,14 @@
         <video id="floatingVideoPlayer" controls></video>
     </div>
 
-    <!-- Status Window (Draggable) -->
-    <div id="statusWindow" class="status-window" style="display: none;">
-        <div class="status-window-header">
-            <div class="status-window-title">当前步骤</div>
-            <div class="status-window-controls">
-                <button class="status-control-btn" onclick="toggleStatusWindow()">−</button>
-                <button class="status-control-btn" onclick="closeStatusWindow()">×</button>
-            </div>
+    <!-- Status Toast -->
+    <div id="statusToast" class="status-toast">
+        <div class="status-content">
+            <span id="statusIcon" class="status-spinner"></span>
+            <span id="statusText">正在处理...</span>
         </div>
-        <div class="status-window-content">
-            <div class="status-info-row">
-                <span id="statusIcon" class="status-spinner"></span>
-                <span id="statusText">准备就绪</span>
-            </div>
-            <div class="status-progress-track">
-                <div id="statusProgressBar" class="status-progress-bar"></div>
-            </div>
+        <div class="status-progress-track">
+            <div id="statusProgressBar" class="status-progress-bar"></div>
         </div>
     </div>
 </body>

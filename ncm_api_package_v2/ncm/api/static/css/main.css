@@ -886,79 +886,36 @@ body {
     .btn { width: 100%; }
     .card { padding: 20px; }
 }
-/* Status Window (Draggable) */
-.status-window {
+/* Status Toast */
+.status-toast {
     position: fixed;
-    bottom: 80px; 
-    right: 30px;
-    width: 320px;
+    bottom: 24px;
+    left: 24px;
     background: rgba(0, 0, 0, 0.85);
-    backdrop-filter: blur(12px);
+    backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 8px;
-    box-shadow: 0 10px 40px rgba(0,0,0,0.3);
-    z-index: 2000;
-    display: none; /* Toggled by JS */
-    color: #fff;
-    transition: box-shadow 0.3s ease;
-    flex-direction: column;
-}
-
-.status-window.minimized {
-    height: 40px; 
-    overflow: hidden;
-}
-
-.status-window-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 10px 14px;
-    background: rgba(255, 255, 255, 0.08); /* Slightly lighter than bg */
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    cursor: move;
-    user-select: none;
-    height: 40px;
-    box-sizing: border-box;
-}
-
-.status-window-title {
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: rgba(255,255,255,0.95);
-}
-
-.status-window-controls {
-    display: flex;
-    gap: 12px;
-}
-
-.status-control-btn {
-    background: none;
-    border: none;
-    color: rgba(255,255,255,0.7);
-    cursor: pointer;
-    font-size: 16px;
-    line-height: 1;
-    padding: 0;
-}
-
-.status-control-btn:hover {
-    color: #fff;
-}
-
-.status-window-content {
     padding: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+    min-width: 280px;
+    z-index: 2000;
+    color: #fff;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    transform: translateY(100px);
+    opacity: 0;
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    pointer-events: none;
 }
 
-/* Spinner and Progress kept, adjusted for new layout */
-.status-info-row {
+.status-toast.show {
+    transform: translateY(0);
+    opacity: 1;
+}
+
+.status-content {
     display: flex;
     align-items: center;
     gap: 12px;
+    margin-bottom: 12px;
 }
 
 .status-spinner {
@@ -997,7 +954,7 @@ body {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: rgba(255,255,255,0.9);
+    max-width: 200px;
 }
 
 .status-progress-track {
@@ -1010,7 +967,7 @@ body {
 
 .status-progress-bar {
     height: 100%;
-    background: #fff; /* White progress bar as requested */
+    background: #fff;
     width: 0%;
     transition: width 0.3s ease;
     border-radius: 2px;
