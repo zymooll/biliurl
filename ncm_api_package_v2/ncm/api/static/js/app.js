@@ -319,6 +319,9 @@ async function playSong(id, name, artist) {
     
     videoPlayerDiv.style.display = 'block';
     
+    // 显示进度提示
+    showStatusToast('正在连接服务器...');
+    
     // 先暂停并清空当前播放，防止重复播放
     videoElement.pause();
     videoElement.removeAttribute('src');
@@ -329,7 +332,12 @@ async function playSong(id, name, artist) {
     videoElement.dataset.currentTitle = `${name} - ${artist}`;
     
     videoElement.onerror = () => {
-        console.log("Video load failed (expected in preview mode).");
+        console.log("Video load failed/error.");
+        showStatusToast('播放失败 (或需要更长时间)', 'error');
+    };
+
+    videoElement.onloadeddata = () => {
+        showStatusToast('视频加载成功', 'success');
     };
     
     videoElement.load();
@@ -959,3 +967,123 @@ window.onload = function() {
     loadApiHash();
     initFloatingVideoDrag();
 };
+
+// ============ Status Toast Functions ============
+let statusToastTimeout;
+let progressInterval;
+let currentProgress = 0;
+
+function showStatusToast(message, type = 'loading') {
+    const toast = document.getElementById('statusToast');
+    const text = document.getElementById('statusText');
+    const spinner = document.getElementById('statusIcon');
+    const bar = document.getElementById('statusProgressBar');
+    
+    if (!toast || !text) return;
+    
+    // Clear any pending hides
+    clearTimeout(statusToastTimeout);
+    
+    text.textContent = message;
+    text.title = message; // Tooltip for overflow text
+    toast.classList.add('show');
+    
+    spinner.className = 'status-spinner'; // Reset class
+    if (type === 'success') {
+        spinner.classList.add('success');
+    } else if (type === 'error') {
+        spinner.classList.add('error');
+    }
+
+    if (type === 'loading') {
+        startProgressSimulation();
+    } else if (type === 'success') {
+        finishProgress();
+    } else if (type === 'error') {
+        clearInterval(progressInterval);
+        bar.style.width = '100%';
+        bar.style.background = '#ff4d4f';
+        
+        // Hide error toast after 5 seconds
+        statusToastTimeout = setTimeout(() => {
+            hideStatusToast();
+        }, 5000);
+    }
+}
+
+function hideStatusToast() {
+    const toast = document.getElementById('statusToast');
+    if (toast) toast.classList.remove('show');
+    clearTimeout(statusToastTimeout);
+    clearInterval(progressInterval);
+}
+
+function startProgressSimulation() {
+    clearInterval(progressInterval);
+    currentProgress = 0;
+    const bar = document.getElementById('statusProgressBar');
+    if (bar) {
+        bar.style.width = '0%';
+        bar.style.background = '#fff';
+    }
+    
+    // Initial jump
+    currentProgress = 5;
+    if (bar) bar.style.width = '5%';
+    
+    // Simulation loop
+    progressInterval = setInterval(() => {
+        if (currentProgress < 95) {
+            // Decelerating random increment
+            let increment = 0;
+            
+            // Phase 1: Rapid start (0-30%) - connection & basic info
+            if (currentProgress < 30) {
+                increment = Math.random() * 2 + 0.5;
+            } 
+            // Phase 2: Moderate (30-60%) - audio processing
+            else if (currentProgress < 60) {
+                increment = Math.random() * 0.8 + 0.2;
+            } 
+            // Phase 3: Slow (60-80%) - video rendering start
+            else if (currentProgress < 80) {
+                increment = Math.random() * 0.4 + 0.1;
+            } 
+            // Phase 4: Validating (80-95%) - finishing up
+            else {
+                increment = Math.random() * 0.1;
+            }
+            
+            currentProgress += increment;
+            if (bar) bar.style.width = `${Math.min(currentProgress, 95)}%`;
+            
+            // Internal state updates based on time/progress
+            const text = document.getElementById('statusText');
+            if (text) {
+                if (currentProgress > 15 && currentProgress < 30) {
+                   if (text.textContent === '正在连接服务器...') text.textContent = '正在获取音频资源...';
+                } else if (currentProgress > 40 && currentProgress < 60) {
+                   if (text.textContent === '正在获取音频资源...') text.textContent = '正在解析歌词与渲染视频...';
+                } else if (currentProgress > 75) {
+                   if (text.textContent === '正在解析歌词与渲染视频...') text.textContent = '视频合成中，请耐心等待...';
+                }
+            }
+        }
+    }, 200);
+}
+
+function finishProgress() {
+    clearInterval(progressInterval);
+    const bar = document.getElementById('statusProgressBar');
+    if (bar) {
+        bar.style.width = '100%';
+        bar.style.background = '#10b981'; // Green for success
+    }
+    
+    const text = document.getElementById('statusText');
+    if (text) text.textContent = '播放开始';
+    
+    statusToastTimeout = setTimeout(() => {
+        hideStatusToast();
+    }, 3000);
+}
