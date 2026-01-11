@@ -877,26 +877,38 @@ function displayPlaylistSongs(songs) {
 
     songs.forEach((song, index) => {
         const artists = song.ar?.map(ar => ar.name).join(', ') || '未知';
+        const album = song.al?.name || '未知专辑';
         const duration = song.dt ? Math.floor(song.dt / 1000) : 0;
         const minutes = Math.floor(duration / 60);
         const seconds = duration % 60;
         const durationStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
 
-        const songItem = document.createElement('div');
-        songItem.className = 'song-item';
-        songItem.innerHTML = `
-            <div class="song-number">${index + 1}</div>
-            <div class="song-info">
-                <div class="song-title">${song.name || '未知歌曲'}</div>
-                <div class="song-artist">${artists} • ${song.al?.name || '未知专辑'}</div>
+        const songRow = document.createElement('div');
+        songRow.className = 'playlist-song-row';
+        
+        // Make the whole row clickable for convenience, excluding buttons
+        songRow.onclick = (e) => {
+            if (e.target.closest('.btn-icon')) return;
+            playPlaylistSong(song.id);
+        };
+
+        songRow.innerHTML = `
+            <div class="playlist-song-number">${index + 1}</div>
+            <div class="playlist-song-info">
+                <div class="playlist-song-title" title="${escapeHtml(song.name)}">${song.name || '未知歌曲'}</div>
+                <div class="playlist-song-meta" title="${escapeHtml(artists)} - ${escapeHtml(album)}">${artists} • ${album}</div>
             </div>
-            <div class="song-duration">${durationStr}</div>
-            <div class="song-actions">
-                <button class="btn-action" onclick="playPlaylistSong(${song.id})" title="播放">▶</button>
-                <button class="btn-action" onclick="viewSongInfo(${song.id})" title="详情">ℹ</button>
+            <div class="playlist-song-duration">${durationStr}</div>
+            <div class="playlist-song-actions">
+                <button class="btn-icon" onclick="playPlaylistSong(${song.id})" title="播放">
+                    <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5v14l11-7z"/></svg>
+                </button>
+                <button class="btn-icon" onclick="viewSongInfo(${song.id})" title="详情">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                </button>
             </div>
         `;
-        listDiv.appendChild(songItem);
+        listDiv.appendChild(songRow);
     });
 }
 

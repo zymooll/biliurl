@@ -185,7 +185,10 @@
 
         <!-- Playlist Card -->
         <div class="card" id="playlistCard" style="display: none;">
-            <h2 style="margin-bottom: 20px; font-size: 1.5rem;">🎵 歌单播放</h2>
+            <h2 style="margin-bottom: 20px; font-size: 1.5rem; display: flex; align-items: center; gap: 12px;">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+                歌单播放
+            </h2>
             <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 20px;">
                 输入网易云音乐歌单链接或歌单ID，获取歌单中的所有歌曲
             </p>
@@ -228,11 +231,11 @@
             <div id="playlistSongs" style="display: none; margin-top: 20px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                     <h3 style="font-size: 1.1rem;">歌曲列表</h3>
-                    <button class="btn btn-secondary" onclick="playAllPlaylistSongs()" style="font-size: 0.85rem; padding: 8px 16px;">
-                        ▶️ 播放全部
+                    <button class="btn btn-secondary" onclick="playAllPlaylistSongs()" style="font-size: 0.85rem; padding: 8px 16px; display: inline-flex; align-items: center; gap: 6px;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5v14l11-7z"/></svg> 播放全部
                     </button>
                 </div>
-                <div id="playlistSongList" class="song-list">
+                <div id="playlistSongList" class="playlist-list">
                     <!-- Playlist songs will be injected here -->
                 </div>
             </div>
