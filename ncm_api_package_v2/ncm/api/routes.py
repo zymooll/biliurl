@@ -949,11 +949,17 @@ async def generate_video_for_vrchat(
     返回:
         MP4视频文件流或MV直链重定向
     """
+    request_start_time = time.time()
+    print(f"\n{'='*60}")
+    print(f"🎬 [视频请求] ID={id}, keywords={keywords}, level={level}, mv={mv}")
+    
     # 验证访问密码或hash
     if not verify_access_password(access_password, access_hash):
+        print(f"❌ [视频请求] 访问密码验证失败")
         raise HTTPException(status_code=403, detail="需要访问密码。请先在Web UI中登录，或在URL中提供access_hash参数。")
     
     if not id and not keywords:
+        print(f"❌ [视频请求] 缺少必要参数")
         raise HTTPException(status_code=400, detail="必须提供 id 或 keywords 参数")
 
     song_id = id
@@ -1135,18 +1141,39 @@ async def generate_video_for_vrchat(
         if simple:
             print("⚡ 使用简化模式生成视频（无字幕）- 使用线程池")
             loop = asyncio.get_event_loop()
-            video_path = await loop.run_in_executor(
-                video_executor,
-                VideoGenerator.generate_video_simple,
-                audio_url,
-                cover_url,
-                None,
-                use_gpu,
-                thread_count,
-                gpu_device,
-                song_id,
-                level
-            )
+            try:
+                # 添加超时保护（最多5分钟）
+                video_path = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        video_executor,
+                        VideoGenerator.generate_video_simple,
+                        audio_url,
+                        cover_url,
+                        None,
+                        use_gpu,
+                        thread_count,
+                        gpu_device,
+                        song_id,
+                        level
+                    ),
+                    timeout=300.0  # 5分钟超时
+                )
+                print(f"✅ 简化模式视频生成完成: {video_path}")
+            except asyncio.TimeoutError:
+                print(f"⏱️ 简化模式视频生成超时（5分钟）")
+                raise HTTPException(status_code=504, detail="视频生成超时")
+            except Exception as e:
+                print(f"❌ 简化模式视频生成失败: {type(e).__name__}: {e}")
+                raise
+            
+            # 验证文件存在
+            if not os.path.exists(video_path):
+                print(f"❌ 视频文件不存在: {video_path}")
+                raise HTTPException(status_code=500, detail="视频文件生成失败")
+            
+            file_size = os.path.getsize(video_path)
+            print(f"📦 返回视频文件: {video_path} ({file_size / 1024 / 1024:.2f} MB)")
+            
             # 视频已持久化存储，无需清理
             return FileResponse(
                 video_path,
@@ -1173,34 +1200,72 @@ async def generate_video_for_vrchat(
         if lyric_data.get("code") != 200:
             print(f"⚠️ 无法获取歌词 (code={lyric_data.get('code')})，使用简化模式 - 使用线程池")
             loop = asyncio.get_event_loop()
-            video_path = await loop.run_in_executor(
-                video_executor,
-                VideoGenerator.generate_video_simple,
-                audio_url,
-                cover_url,
-                None,
-                use_gpu,
-                thread_count,
-                gpu_device,
-                song_id,
-                level
-            )
+            try:
+                video_path = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        video_executor,
+                        VideoGenerator.generate_video_simple,
+                        audio_url,
+                        cover_url,
+                        None,
+                        use_gpu,
+                        thread_count,
+                        gpu_device,
+                        song_id,
+                        level
+                    ),
+                    timeout=300.0
+                )
+                print(f"✅ 降级简化模式视频生成完成: {video_path}")
+            except asyncio.TimeoutError:
+                print(f"⏱️ 降级简化模式视频生成超时（5分钟）")
+                raise HTTPException(status_code=504, detail="视频生成超时")
+            except Exception as e:
+                print(f"❌ 降级简化模式视频生成失败: {type(e).__name__}: {e}")
+                raise
+            
+            if not os.path.exists(video_path):
+                print(f"❌ 视频文件不存在: {video_path}")
+                raise HTTPException(status_code=500, detail="视频文件生成失败")
+            
+            file_size = os.path.getsize(video_path)
+            print(f"📦 返回视频文件: {video_path} ({file_size / 1024 / 1024:.2f} MB)")
+            
             # 视频已持久化存储，无需清理
             return FileResponse(
                 video_path,
                 media_type="video/mp4",
-                filename=f"{song_name} - {artist_name}.mp4",
-                headers={
-                    "Accept-Ranges": "bytes",
-                    "Cache-Control": "public, max-age=86400"  # 缓存1天
-                }
-            )
-        
-        lyrics_data = (lyric_data.get("data") or {}).get("lyrics") or {}
-        lrc_obj = lyrics_data.get("lrc") or {}
-        tlyric_obj = lyrics_data.get("tlyric") or {}
-        lrc = lrc_obj.get("lyric") if isinstance(lrc_obj, dict) else None
-        tlyric = tlyric_obj.get("lyric") if isinstance(tlyric_obj, dict) else None
+            try:
+                video_path = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        video_executor,
+                        VideoGenerator.generate_video_simple,
+                        audio_url,
+                        cover_url,
+                        None,
+                        use_gpu,
+                        thread_count,
+                        gpu_device,
+                        song_id,
+                        level
+                    ),
+                    timeout=300.0
+                )
+                print(f"✅ 无歌词简化模式视频生成完成: {video_path}")
+            except asyncio.TimeoutError:
+                print(f"⏱️ 无歌词简化模式视频生成超时（5分钟）")
+                raise HTTPException(status_code=504, detail="视频生成超时")
+            except Exception as e:
+                print(f"❌ 无歌词简化模式视频生成失败: {type(e).__name__}: {e}")
+                raise
+            
+            if not os.path.exists(video_path):
+                print(f"❌ 视频文件不存在: {video_path}")
+                raise HTTPException(status_code=500, detail="视频文件生成失败")
+            
+            file_size = os.path.getsize(video_path)
+            print(f"📦 返回视频文件: {video_path} ({file_size / 1024 / 1024:.2f} MB)")
+            c = tlyric_obj.get("lyric") if isinstance(tlyric_obj, dict) else None
         
         print(f"📝 歌词结构: lyrics_data类型={type(lyrics_data)}, lrc_obj类型={type(lrc_obj)}")
         print(f"📝 歌词数据: lrc={'存在' if lrc else '空'} ({len(lrc) if lrc else 0} 字符), tlyric={'存在' if tlyric else '空'} ({len(tlyric) if tlyric else 0} 字符)")
@@ -1215,28 +1280,44 @@ async def generate_video_for_vrchat(
                 cover_url,
                 None,
                 use_gpu,
-                thread_count,
-                gpu_device,
-                song_id,
-                level
+        try:
+            # 添加超时保护（最多10分钟，因为带字幕的视频生成更慢）
+            video_path = await asyncio.wait_for(
+                loop.run_in_executor(
+                    video_executor,
+                    VideoGenerator.generate_video,
+                    audio_url,
+                    cover_url,
+                    lrc,
+                    tlyric,
+                    song_name,
+                    artist_name,
+                    use_gpu,
+                    thread_count,
+                    gpu_device,
+                    song_id,
+                    level
+                ),
+                timeout=600.0  # 10分钟超时
             )
-            # 视频已持久化存储，无需清理
-            return FileResponse(
-                video_path,
-                media_type="video/mp4",
-                filename=f"{song_name} - {artist_name}.mp4",
-                headers={
-                    "Accept-Ranges": "bytes",
-                    "Cache-Control": "public, max-age=86400"  # 缓存1天
-                }
-            )
+            print(f"✅ 完整视频生成完成: {video_path}")
+        except asyncio.TimeoutError:
+            print(f"⏱️ 完整视频生成超时（10分钟）")
+            raise HTTPException(status_code=504, detail="视频生成超时")
+        except Exception as e:
+            print(f"❌ 完整视频生成失败: {type(e).__name__}: {e}")
+            raise
         
-        # 5. 生成完整视频（带字幕）- 在线程池中异步执行
-        print("🎬 生成完整视频（带字幕）- 使用线程池")
-        loop = asyncio.get_event_loop()
-        video_path = await loop.run_in_executor(
-            video_executor,
-            VideoGenerator.generate_video,
+        # 6. 返回视频文件
+        if not os.path.exists(video_path):
+            print(f"❌ 视频文件不存在: {video_path}")
+            raise HTTPException(status_code=500, detail="视频文件生成失败")
+        
+        file_size = os.path.getsize(video_path)
+        print(f"📦 视频文件大小: {file_size / 1024 / 1024:.2f} MB")
+        elapsed = time.time() - request_start_time
+        print(f"✅ [视频请求] 处理完成，总耗时: {elapsed:.2f}秒")
+        print(f"{'='*60}\n
             audio_url,
             cover_url,
             lrc,
@@ -1269,8 +1350,22 @@ async def generate_video_for_vrchat(
             }
         )
         
-    except HTTPException:
+    except HTTPException as he:
+        elapsed = time.time() - request_start_time
+        print(f"❌ [视频请求] HTTP异常: {he.detail} (耗时: {elapsed:.2f}秒)")
+        print(f"{'='*60}\n")
         raise
+    except asyncio.TimeoutError:
+        elapsed = time.time() - request_start_time
+        print(f"⏱️ [视频请求] 超时: 处理时间超过限制 (耗时: {elapsed:.2f}秒)")
+        print(f"{'='*60}\n")
+        raise HTTPException(status_code=504, detail="视频生成超时，请稍后重试")
     except Exception as e:
-        print(f"❌ 视频生成失败: {e}")
+        elapsed = time.time() - request_start_time
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"❌ [视频请求] 未知错误: {type(e).__name__}: {str(e)}")
+        print(f"📍 错误堆栈:\n{error_trace}")
+        print(f"⏱️ 耗时: {elapsed:.2f}秒")
+        print(f"{'='*60}\n")
         raise HTTPException(status_code=500, detail=f"视频生成失败: {str(e)}")
