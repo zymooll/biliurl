@@ -889,7 +889,7 @@ body {
 
 /* Status Toast - Floating Window */
 .status-toast {
-    position: fixed;
+    position: fixed !important;
     bottom: 20px;
     left: 20px;
     width: 320px;
@@ -897,11 +897,13 @@ body {
     border: 1px solid var(--border-color);
     border-radius: 8px;
     box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-    z-index: 2000;
+    z-index: 9999;
     display: none;
     overflow: hidden;
     cursor: move;
     user-select: none;
+    transform: translateZ(0);
+    will-change: transform;
 }
 
 [data-theme="dark"] .status-toast {
