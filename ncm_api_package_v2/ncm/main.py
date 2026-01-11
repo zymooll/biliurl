@@ -1,12 +1,21 @@
 from fastapi import FastAPI
-from ncm.api.routes import router, init_login_handler
+from fastapi.staticfiles import StaticFiles
+from ncm.api.routes import router, init_login_handler, STATIC_FILES_DIR
 from ncm.core.login import LoginProtocol
 from ncm.core.music import UserInteractive
 from ncm.utils.cookie import load_cookie, save_cookie
 from ncm.config import API_BASE_URL
 import requests
+import os
 
 app = FastAPI(title="NCM API Service")
+
+# 挂载静态文件目录
+if os.path.exists(STATIC_FILES_DIR):
+    app.mount("/static", StaticFiles(directory=STATIC_FILES_DIR), name="static")
+    print(f"📁 静态文件目录已挂载: {STATIC_FILES_DIR}")
+else:
+    print(f"⚠️ 静态文件目录不存在: {STATIC_FILES_DIR}")
 
 @app.on_event("startup")
 async def startup_event():

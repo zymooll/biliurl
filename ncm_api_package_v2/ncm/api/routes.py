@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query, Response, BackgroundTasks, Cookie, Header, Form
 from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, HTMLResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 import requests
 import os
 import time
@@ -14,11 +15,14 @@ from ncm.core.video import VideoGenerator
 from ncm.utils.cookie import load_cookie, save_cookie
 from ncm.utils.database import db
 from ncm.utils.access_password import AccessPasswordManager
-from ncm.api.web_ui import get_web_ui_html, get_login_page_html
+from ncm.api.web_ui import get_web_ui_html, get_login_page_html, STATIC_DIR
 
 router = APIRouter()
 login_handler = None
 API_BASE_URL = "http://localhost:3002/"
+
+# 静态文件目录路径（用于挂载）
+STATIC_FILES_DIR = STATIC_DIR
 
 # 创建线程池用于CPU密集型任务（如FFmpeg）
 # 默认使用CPU核心数，可以根据需要调整
