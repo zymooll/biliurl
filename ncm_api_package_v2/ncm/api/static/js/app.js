@@ -895,32 +895,29 @@ function displayPlaylistSongs(songs) {
 
 async function playPlaylistSong(songId) {
     try {
-        const useMv = document.getElementById('optionMv')?.checked ?? true;
-        const useGpu = document.getElementById('optionGpu')?.checked ?? true;
         const level = document.getElementById('optionLevel')?.value || 'standard';
 
         const params = new URLSearchParams({
             id: songId,
-            use_mv: useMv,
-            use_gpu: useGpu,
             level: level
         });
 
-        const response = await fetch(`/stream?${params.toString()}`);
+        // 使用 /play/direct 获取 URL（JSON格式）
+        const response = await fetch(`/play/direct?${params.toString()}`);
         const data = await response.json();
 
-        if (data.url) {
+        if (data.success && data.url) {
             const videoPlayer = document.getElementById('video');
             videoPlayer.src = data.url;
             videoPlayer.play();
 
-            const apiUrl = `${window.location.origin}/stream?${params.toString()}`;
+            const apiUrl = `${window.location.origin}/stream?id=${songId}&level=${level}`;
             document.getElementById('apiUrl').value = apiUrl;
 
             document.getElementById('videoPlayer').style.display = 'block';
             document.getElementById('videoPlayer').scrollIntoView({ behavior: 'smooth' });
         } else {
-            alert('无法播放: ' + (data.error || '未知错误'));
+            alert('无法播放: ' + (data.message || '未知错误'));
         }
     } catch (error) {
         console.error('Error playing song:', error);
