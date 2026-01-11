@@ -11,6 +11,8 @@
     --shadow-sm: 0 2px 4px rgba(0,0,0,0.02);
     --shadow-md: 0 5px 10px rgba(0,0,0,0.12);
     --transition: all 0.2s ease;
+    --card-bg: rgba(255, 255, 255, 0.95);
+    --hover-bg: rgba(0, 0, 0, 0.05);
 }
 
 [data-theme="dark"] {
@@ -22,6 +24,8 @@
     --accent-hover: #ccc;
     --shadow-sm: 0 2px 4px rgba(255,255,255,0.02);
     --shadow-md: 0 5px 10px rgba(255,255,255,0.05);
+    --card-bg: rgba(17, 17, 17, 0.95);
+    --hover-bg: rgba(255, 255, 255, 0.1);
 }
 
 * {
@@ -900,10 +904,7 @@ body {
     z-index: 9999;
     display: none;
     overflow: hidden;
-    cursor: move;
     user-select: none;
-    transform: translateZ(0);
-    will-change: transform;
 }
 
 [data-theme="dark"] .status-toast {
