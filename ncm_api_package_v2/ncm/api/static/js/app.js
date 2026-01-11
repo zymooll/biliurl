@@ -318,6 +318,13 @@ async function playSong(id, name, artist) {
     document.getElementById('apiUrl').value = fullApiUrl;
     
     videoPlayerDiv.style.display = 'block';
+    
+    // 先暂停并清空当前播放，防止重复播放
+    videoElement.pause();
+    videoElement.removeAttribute('src');
+    videoElement.load();
+    
+    // 设置新的源
     videoElement.src = videoUrl;
     videoElement.dataset.currentTitle = `${name} - ${artist}`;
     
@@ -908,7 +915,15 @@ async function playPlaylistSong(songId) {
 
         if (data.success && data.url) {
             const videoPlayer = document.getElementById('video');
+            
+            // 先暂停并清空当前播放，防止重复播放
+            videoPlayer.pause();
+            videoPlayer.removeAttribute('src');
+            videoPlayer.load();
+            
+            // 设置新的源并播放
             videoPlayer.src = data.url;
+            videoPlayer.load();
             videoPlayer.play();
 
             const apiUrl = `${window.location.origin}/stream?id=${songId}&level=${level}`;
