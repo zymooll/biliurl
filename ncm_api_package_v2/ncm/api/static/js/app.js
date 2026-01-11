@@ -968,27 +968,41 @@ window.onload = function() {
     initFloatingVideoDrag();
 };
 
-// ============ Status Toast Functions ============
-let statusToastTimeout;
+// ============ Status Window Functions (Floating Draggable) ============
+let statusWindowTimeout;
 let progressInterval;
 let currentProgress = 0;
+let isStatusDragging = false;
+let statusDragOffsetX = 0;
+let statusDragOffsetY = 0;
 
 function showStatusToast(message, type = 'loading') {
-    const toast = document.getElementById('statusToast');
+    // Alias to showStatusWindow to keep API compatibility
+    showStatusWindow(message, type);
+}
+
+function showStatusWindow(message, type = 'loading') {
+    const win = document.getElementById('statusWindow');
     const text = document.getElementById('statusText');
     const spinner = document.getElementById('statusIcon');
     const bar = document.getElementById('statusProgressBar');
     
-    if (!toast || !text) return;
+    if (!win || !text) return;
     
     // Clear any pending hides
-    clearTimeout(statusToastTimeout);
+    clearTimeout(statusWindowTimeout);
+    
+    // Keep it visible
+    win.style.display = 'flex';
+    // Ensure expanded if new action starts
+    if (type === 'loading') {
+        win.classList.remove('minimized');
+    }
     
     text.textContent = message;
-    text.title = message; // Tooltip for overflow text
-    toast.classList.add('show');
+    text.title = message; 
     
-    spinner.className = 'status-spinner'; // Reset class
+    spinner.className = 'status-spinner'; 
     if (type === 'success') {
         spinner.classList.add('success');
     } else if (type === 'error') {
@@ -1001,22 +1015,79 @@ function showStatusToast(message, type = 'loading') {
         finishProgress();
     } else if (type === 'error') {
         clearInterval(progressInterval);
-        bar.style.width = '100%';
-        bar.style.background = '#ff4d4f';
+        if (bar) {
+            bar.style.width = '100%';
+            bar.style.background = '#ff4d4f';
+        }
         
-        // Hide error toast after 5 seconds
-        statusToastTimeout = setTimeout(() => {
-            hideStatusToast();
+        statusWindowTimeout = setTimeout(() => {
+            hideStatusWindow();
         }, 5000);
     }
 }
 
-function hideStatusToast() {
-    const toast = document.getElementById('statusToast');
-    if (toast) toast.classList.remove('show');
-    clearTimeout(statusToastTimeout);
+function hideStatusWindow() {
+    const win = document.getElementById('statusWindow');
+    if (win) win.style.display = 'none';
+    clearTimeout(statusWindowTimeout);
     clearInterval(progressInterval);
 }
+
+function closeStatusWindow() {
+    hideStatusWindow();
+}
+
+function toggleStatusWindow() {
+    const win = document.getElementById('statusWindow');
+    if (win) win.classList.toggle('minimized');
+}
+
+function initStatusWindowDrag() {
+    const win = document.getElementById('statusWindow');
+    const header = win.querySelector('.status-window-header');
+    
+    if (!win || !header) return;
+
+    header.addEventListener('mousedown', function(e) {
+        if (e.target.closest('.status-control-btn')) return;
+        
+        isStatusDragging = true;
+        const rect = win.getBoundingClientRect();
+        statusDragOffsetX = e.clientX - rect.left;
+        statusDragOffsetY = e.clientY - rect.top;
+        
+        document.body.style.userSelect = 'none';
+        // Only prevent default on the header itself to allow control clicks
+        // (Handled by closest check above)
+    });
+
+    document.addEventListener('mousemove', function(e) {
+        if (!isStatusDragging) return;
+        
+        // Use fixed positioning logic
+        // Calculate LEFT and TOP based on mouse position
+        const newX = e.clientX - statusDragOffsetX;
+        const newY = e.clientY - statusDragOffsetY;
+        
+        // Bounds checking
+        const maxX = window.innerWidth - win.offsetWidth;
+        const maxY = window.innerHeight - win.offsetHeight;
+        
+        // We set left/top, and reset right/bottom to auto to switch from initial fixed positioning
+        win.style.right = 'auto';
+        win.style.bottom = 'auto';
+        win.style.left = Math.max(0, Math.min(newX, maxX)) + 'px';
+        win.style.top = Math.max(0, Math.min(newY, maxY)) + 'px';
+    });
+
+    document.addEventListener('mouseup', function() {
+        if (isStatusDragging) {
+            isStatusDragging = false;
+            document.body.style.userSelect = '';
+        }
+    });
+}
+
 
 function startProgressSimulation() {
     clearInterval(progressInterval);
@@ -1034,38 +1105,28 @@ function startProgressSimulation() {
     // Simulation loop
     progressInterval = setInterval(() => {
         if (currentProgress < 95) {
-            // Decelerating random increment
             let increment = 0;
-            
-            // Phase 1: Rapid start (0-30%) - connection & basic info
-            if (currentProgress < 30) {
-                increment = Math.random() * 2 + 0.5;
-            } 
-            // Phase 2: Moderate (30-60%) - audio processing
-            else if (currentProgress < 60) {
-                increment = Math.random() * 0.8 + 0.2;
-            } 
-            // Phase 3: Slow (60-80%) - video rendering start
-            else if (currentProgress < 80) {
-                increment = Math.random() * 0.4 + 0.1;
-            } 
-            // Phase 4: Validating (80-95%) - finishing up
-            else {
-                increment = Math.random() * 0.1;
-            }
+            // Phase 1: 0-30%
+            if (currentProgress < 30) increment = Math.random() * 2 + 0.5;
+            // Phase 2: 30-60%
+            else if (currentProgress < 60) increment = Math.random() * 0.8 + 0.2;
+            // Phase 3: 60-80%
+            else if (currentProgress < 80) increment = Math.random() * 0.4 + 0.1;
+            // Phase 4: 80-95%
+            else increment = Math.random() * 0.1;
             
             currentProgress += increment;
             if (bar) bar.style.width = `${Math.min(currentProgress, 95)}%`;
             
-            // Internal state updates based on time/progress
+            // Text updates
             const text = document.getElementById('statusText');
             if (text) {
                 if (currentProgress > 15 && currentProgress < 30) {
                    if (text.textContent === '正在连接服务器...') text.textContent = '正在获取音频资源...';
                 } else if (currentProgress > 40 && currentProgress < 60) {
-                   if (text.textContent === '正在获取音频资源...') text.textContent = '正在解析歌词与渲染视频...';
+                   if (text.textContent === '正在获取音频资源...') text.textContent = '正在解析歌词并渲染...';
                 } else if (currentProgress > 75) {
-                   if (text.textContent === '正在解析歌词与渲染视频...') text.textContent = '视频合成中，请耐心等待...';
+                   if (text.textContent.includes('正在解析')) text.textContent = '视频合成中，请耐心等待...';
                 }
             }
         }
@@ -1077,13 +1138,20 @@ function finishProgress() {
     const bar = document.getElementById('statusProgressBar');
     if (bar) {
         bar.style.width = '100%';
-        bar.style.background = '#10b981'; // Green for success
+        bar.style.background = '#10b981'; 
     }
     
     const text = document.getElementById('statusText');
     if (text) text.textContent = '播放开始';
     
-    statusToastTimeout = setTimeout(() => {
-        hideStatusToast();
+    statusWindowTimeout = setTimeout(() => {
+        hideStatusWindow();
     }, 3000);
 }
+
+// Add init call to existing onload
+const oldOnload = window.onload;
+window.onload = function() {
+    if (oldOnload) oldOnload();
+    initStatusWindowDrag(); // Initialize the new draggable window
+};
