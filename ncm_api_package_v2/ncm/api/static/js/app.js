@@ -901,42 +901,18 @@ function displayPlaylistSongs(songs) {
 }
 
 async function playPlaylistSong(songId) {
-    try {
-        const level = document.getElementById('optionLevel')?.value || 'standard';
-
-        const params = new URLSearchParams({
-            id: songId,
-            level: level
-        });
-
-        // 使用 /play/direct 获取 URL（JSON格式）
-        const response = await fetch(`/play/direct?${params.toString()}`);
-        const data = await response.json();
-
-        if (data.success && data.url) {
-            const videoPlayer = document.getElementById('video');
-            
-            // 先暂停并清空当前播放，防止重复播放
-            videoPlayer.pause();
-            videoPlayer.removeAttribute('src');
-            videoPlayer.load();
-            
-            // 设置新的源并播放
-            videoPlayer.src = data.url;
-            videoPlayer.load();
-            videoPlayer.play();
-
-            const apiUrl = `${window.location.origin}/stream?id=${songId}&level=${level}`;
-            document.getElementById('apiUrl').value = apiUrl;
-
-            document.getElementById('videoPlayer').style.display = 'block';
-            document.getElementById('videoPlayer').scrollIntoView({ behavior: 'smooth' });
-        } else {
-            alert('无法播放: ' + (data.message || '未知错误'));
-        }
-    } catch (error) {
-        console.error('Error playing song:', error);
-        alert('播放失败: ' + error.message);
+    // 从歌单中找到对应的歌曲信息
+    const song = currentPlaylistSongs.find(s => s.id === songId);
+    
+    if (song) {
+        const songName = song.name || '未知歌曲';
+        const artist = song.ar?.map(ar => ar.name).join(', ') || '未知歌手';
+        
+        // 复用搜索播放的逻辑（支持MV、视频生成、缓存等）
+        await playSong(songId, songName, artist);
+    } else {
+        // 如果找不到歌曲信息，使用ID作为fallback
+        await playSong(songId, `Song ${songId}`, 'Unknown');
     }
 }
 
