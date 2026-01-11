@@ -875,41 +875,43 @@ function displayPlaylistSongs(songs) {
     const listDiv = document.getElementById('playlistSongList');
     listDiv.innerHTML = '';
 
-    songs.forEach((song, index) => {
+    const html = songs.map((song, index) => {
         const artists = song.ar?.map(ar => ar.name).join(', ') || '未知';
         const album = song.al?.name || '未知专辑';
-        const duration = song.dt ? Math.floor(song.dt / 1000) : 0;
-        const minutes = Math.floor(duration / 60);
-        const seconds = duration % 60;
-        const durationStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        const picUrl = song.al?.picUrl || '';
+        const hasMv = song.mv && song.mv > 0;
+        const fee = song.fee || 0;
+        const isVip = fee === 1; // 1: VIP Song
 
-        const songRow = document.createElement('div');
-        songRow.className = 'playlist-song-row';
-        
-        // Make the whole row clickable for convenience, excluding buttons
-        songRow.onclick = (e) => {
-            if (e.target.closest('.btn-icon')) return;
-            playPlaylistSong(song.id);
-        };
-
-        songRow.innerHTML = `
-            <div class="playlist-song-number">${index + 1}</div>
-            <div class="playlist-song-info">
-                <div class="playlist-song-title" title="${escapeHtml(song.name)}">${song.name || '未知歌曲'}</div>
-                <div class="playlist-song-meta" title="${escapeHtml(artists)} - ${escapeHtml(album)}">${artists} • ${album}</div>
-            </div>
-            <div class="playlist-song-duration">${durationStr}</div>
-            <div class="playlist-song-actions">
-                <button class="btn-icon" onclick="playPlaylistSong(${song.id})" title="播放">
-                    <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5v14l11-7z"/></svg>
-                </button>
-                <button class="btn-icon" onclick="viewSongInfo(${song.id})" title="详情">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-                </button>
+        return `
+            <div class="song-item card" style="margin-bottom: 0;" onclick="handlePlaylistSongClick(event, ${song.id}, '${escapeHtml(song.name)}', '${escapeHtml(artists)}')">
+                <div class="song-number">${index + 1}</div>
+                
+                <img src="${picUrl}?param=60y60" class="song-cover" alt="cover" onerror="this.style.display='none'">
+                
+                <div class="song-info">
+                    <div class="song-name">
+                        ${song.name}
+                        ${hasMv ? '<span class="badge badge-mv">MV</span>' : ''}
+                        ${isVip ? '<span class="badge badge-vip">VIP</span>' : ''}
+                    </div>
+                    <div class="song-meta">${artists} • ${album}</div>
+                </div>
+                
+                <div class="play-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M8 5V19L19 12L8 5Z"/></svg>
+                </div>
             </div>
         `;
-        listDiv.appendChild(songRow);
-    });
+    }).join('');
+
+    listDiv.innerHTML = html;
+}
+
+function handlePlaylistSongClick(event, id, name, artist) {
+    // Prevent event bubbling if clicking on interactive elements (though card click handles play)
+    // Here we just want the whole card to trigger play, similar to search results
+    playSong(id, name, artist);
 }
 
 async function playPlaylistSong(songId) {

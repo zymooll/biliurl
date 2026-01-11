@@ -477,12 +477,6 @@ body {
     gap: 12px;
 }
 
-.playlist-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-}
-
 .song-item {
     display: flex;
     align-items: center;
@@ -816,122 +810,15 @@ body {
     background: rgba(0,0,0,0.1);
 }
 
-/* Playlist Song Row Styles */
-.playlist-song-row {
-    display: flex;
-    align-items: center;
-    padding: 10px 16px;
-    border-radius: var(--radius);
-    transition: var(--transition);
-    border-bottom: 1px solid var(--border-color);
-    cursor: pointer;
-}
-
-.playlist-song-row:last-child {
-    border-bottom: none;
-}
-
-.playlist-song-row:hover {
-    background-color: var(--border-color);
-}
-
-[data-theme="light"] .playlist-song-row:hover {
-    background-color: #f5f5f5;
-}
-
-[data-theme="dark"] .playlist-song-row:hover {
-    background-color: #1a1a1a;
-}
-
-.playlist-song-number {
-    width: 40px;
+/* Song Number Style */
+.song-number {
+    width: 30px;
+    text-align: center;
     color: var(--text-secondary);
     font-size: 0.9rem;
-    text-align: center;
-    margin-right: 16px;
+    margin-right: 12px;
+    flex-shrink: 0;
     font-variant-numeric: tabular-nums;
-    font-weight: 500;
-}
-
-.playlist-song-info {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-}
-
-.playlist-song-title {
-    font-size: 0.95rem;
-    color: var(--text-primary);
-    font-weight: 500;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    margin-bottom: 4px;
-}
-
-.playlist-song-meta {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.playlist-song-duration {
-    width: 60px;
-    text-align: right;
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-    margin: 0 16px;
-    font-variant-numeric: tabular-nums;
-}
-
-.playlist-song-actions {
-    display: flex;
-    gap: 8px;
-    opacity: 0;  /* Hidden by default until hover */
-    transition: var(--transition);
-}
-
-.playlist-song-row:hover .playlist-song-actions {
-    opacity: 1;
-}
-
-/* On mobile, always show actions or handle differently - here assume desktop-first logic implies hover is okay, 
-   but for touch devices, opacity 1 might be better. */
-@media (max-width: 768px) {
-    .playlist-song-actions {
-        opacity: 1;
-    }
-}
-
-.btn-icon {
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    color: var(--text-secondary);
-    padding: 6px;
-    border-radius: 4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: var(--transition);
-}
-
-.btn-icon:hover {
-    background-color: rgba(0,0,0,0.05);
-    color: var(--blue);
-}
-
-[data-theme="dark"] .btn-icon:hover {
-    background-color: rgba(255,255,255,0.1);
-}
-
-.btn-icon svg {
-    width: 18px;
-    height: 18px;
 }
 
 /* Pagination */
