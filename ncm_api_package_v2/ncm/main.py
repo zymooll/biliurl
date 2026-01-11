@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import Response
 from ncm.api.routes import router, init_login_handler, STATIC_FILES_DIR
 from ncm.core.login import LoginProtocol
 from ncm.core.music import UserInteractive
@@ -10,9 +11,21 @@ import os
 
 app = FastAPI(title="NCM API Service")
 
-# 挂载静态文件目录
+# 自定义StaticFiles类，添加no-cache头
+class NoCacheStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        if isinstance(response, Response):
+            # 对JS和CSS文件添加no-cache头
+            if path.endswith(('.js', '.css')):
+                response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+                response.headers["Pragma"] = "no-cache"
+                response.headers["Expires"] = "0"
+        return response
+
+# 挂载静态文件目录（使用自定义的NoCacheStaticFiles）
 if os.path.exists(STATIC_FILES_DIR):
-    app.mount("/static", StaticFiles(directory=STATIC_FILES_DIR), name="static")
+    app.mount("/static", NoCacheStaticFiles(directory=STATIC_FILES_DIR), name="static")
     print(f"📁 静态文件目录已挂载: {STATIC_FILES_DIR}")
 else:
     print(f"⚠️ 静态文件目录不存在: {STATIC_FILES_DIR}")
