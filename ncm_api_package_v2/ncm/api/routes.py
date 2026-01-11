@@ -1084,6 +1084,7 @@ async def generate_video_for_vrchat(
         thread_count = threads if threads and threads > 0 else None
         # 1. 获取音频链接（带重试）
         cookie = load_cookie()
+        print(f"🎵 准备获取音频URL: song_id={song_id}, level={level}")
         audio_result = retry_request(
             UserInteractive.getDownloadUrl,
             song_id, level, unblock, cookie,
@@ -1114,7 +1115,7 @@ async def generate_video_for_vrchat(
             )
         
         audio_url = audio_result["url"]
-        print(f"✅ 成功获取音频URL: {audio_url[:100]}...")
+        print(f"✅ 成功获取音频URL (song_id={song_id}): {audio_url[:100]}...")
         
         # 2. 获取歌曲详情（封面）- 带重试
         song_detail = retry_request(

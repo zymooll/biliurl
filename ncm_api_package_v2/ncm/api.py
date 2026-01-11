@@ -180,6 +180,7 @@ class UserInteractive:
     def getDownloadUrl(songID, level="exhigh", unblock=False, cookie=None):
         """获取歌曲下载链接"""
         try:
+            print(f"🎵 [getDownloadUrl] 传入参数: songID={songID}, level={level}")
             if not cookie:
                 cookie = load_cookie()
             
@@ -200,7 +201,7 @@ class UserInteractive:
                     params["source"] = "migu,qq"
                 
                 url = f"{API_BASE_URL}song/url/v1"
-                print(f"📡 正在请求: {current_level} (VIP={bool(current_cookie)}, Unblock={current_unblock})")
+                print(f"📡 正在请求音频URL: songID={songID}, level={current_level} (VIP={bool(current_cookie)}, Unblock={current_unblock})")
                 # 改用 POST 请求，防止 Cookie 过长导致 URL 超出限制 (HTTP 502)
                 resp = requests.post(url, data=params)
                 return resp.json()
@@ -234,6 +235,13 @@ class UserInteractive:
 
             if not downloadUrl:
                 return {"success": False, "data": data}
+            
+            # 验证返回的歌曲ID是否匹配
+            returned_song_id = song_info.get('id')
+            if returned_song_id and str(returned_song_id) != str(songID):
+                print(f"⚠️ 警告: 请求的歌曲ID ({songID}) 与返回的ID ({returned_song_id}) 不匹配!")
+            else:
+                print(f"✅ 歌曲ID验证通过: {songID}")
             
             return {
                 "success": True,

@@ -523,7 +523,8 @@ class VideoGenerator:
         
         try:
             # 1. 下载音频
-            print("📥 下载音频...")
+            print(f"📥 下载音频 (song_id={song_id}, level={level})...")
+            print(f"🔗 音频URL: {audio_url[:100]}...")
             audio_path = os.path.join(temp_dir, "audio.mp3")
             
             # 添加更多headers，模拟浏览器请求
@@ -554,6 +555,9 @@ class VideoGenerator:
             # 使用ffprobe验证音频文件格式（如果可用）
             try:
                 import subprocess
+                import json
+                
+                # 获取音频时长
                 ffprobe_cmd = ['ffprobe', '-v', 'error', '-show_entries', 
                               'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', 
                               audio_path]
@@ -561,6 +565,23 @@ class VideoGenerator:
                 if result.returncode == 0 and result.stdout.strip():
                     duration = float(result.stdout.strip())
                     print(f"✅ 音频格式验证通过，时长: {duration:.2f}秒")
+                    
+                    # 获取音频元数据(如果有)
+                    metadata_cmd = ['ffprobe', '-v', 'quiet', '-print_format', 'json', 
+                                   '-show_format', '-show_streams', audio_path]
+                    meta_result = subprocess.run(metadata_cmd, capture_output=True, text=True, timeout=5)
+                    if meta_result.returncode == 0:
+                        try:
+                            metadata = json.loads(meta_result.stdout)
+                            format_tags = metadata.get('format', {}).get('tags', {})
+                            if format_tags:
+                                title = format_tags.get('title', format_tags.get('Title', ''))
+                                artist = format_tags.get('artist', format_tags.get('Artist', ''))
+                                if title or artist:
+                                    print(f"📝 音频元数据: title={title}, artist={artist}")
+                                    print(f"📝 期望歌曲: {song_name} - {artist}")
+                        except:
+                            pass
                 else:
                     print(f"⚠️ 无法验证音频格式，但将尝试继续处理")
             except Exception as probe_error:
@@ -662,14 +683,20 @@ class VideoGenerator:
                 '-threads', thread_count,
             ] + enc_conf["pre_args"] + [
                 '-loop', '1',
+                '-framerate', '25',  # 明确设置输入帧率
                 '-i', cover_resized,
                 '-i', audio_path,
                 '-vf', vf_chain,
             ] + video_codec_args + [
                 '-c:a', 'aac',
                 '-b:a', '192k',
+                '-ar', '44100',  # 音频采样率
             ] + pix_fmt_args + [
-                '-shortest',
+                '-shortest',  # 以最短流为准（应该是音频）
+                '-fflags', '+shortest',  # 更严格的shortest模式
+                '-max_interleave_delta', '0',  # 减少音视频交错延迟
+                '-vsync', 'cfr',  # 恒定帧率，确保同步
+                '-async', '1',  # 音频同步参数
                 '-movflags', '+faststart',
                 '-f', 'mp4',  # 明确指定输出格式为 mp4（支持 .tmp 扩展名）
                 '-y',
@@ -869,14 +896,20 @@ class VideoGenerator:
                 '-threads', thread_count,
             ] + enc_conf["pre_args"] + [
                 '-loop', '1',
+                '-framerate', '25',  # 明确设置输入帧率
                 '-i', cover_resized,
                 '-i', audio_path,
                 '-vf', vf_chain,
             ] + video_codec_args + [
                 '-c:a', 'aac',
                 '-b:a', '192k',
+                '-ar', '44100',  # 音频采样率
             ] + pix_fmt_args + [
-                '-shortest',
+                '-shortest',  # 以最短流为准（应该是音频）
+                '-fflags', '+shortest',  # 更严格的shortest模式
+                '-max_interleave_delta', '0',  # 减少音视频交错延迟
+                '-vsync', 'cfr',  # 恒定帧率，确保同步
+                '-async', '1',  # 音频同步参数
                 '-movflags', '+faststart',
                 '-f', 'mp4',  # 明确指定输出格式为 mp4（支持 .tmp 扩展名）
                 '-y',
