@@ -966,12 +966,16 @@ window.onload = function() {
     switchMode('search');
     loadApiHash();
     initFloatingVideoDrag();
+    initStatusToastDrag();
 };
 
 // ============ Status Toast Functions ============
 let statusToastTimeout;
 let progressInterval;
 let currentProgress = 0;
+let isStatusDragging = false;
+let statusDragOffsetX = 0;
+let statusDragOffsetY = 0;
 
 function showStatusToast(message, type = 'loading') {
     const toast = document.getElementById('statusToast');
@@ -1006,7 +1010,7 @@ function showStatusToast(message, type = 'loading') {
         
         // Hide error toast after 5 seconds
         statusToastTimeout = setTimeout(() => {
-            hideStatusToast();
+            closeStatusToast();
         }, 5000);
     }
 }
@@ -1018,13 +1022,62 @@ function hideStatusToast() {
     clearInterval(progressInterval);
 }
 
+function closeStatusToast() {
+    hideStatusToast();
+}
+
+function toggleStatusToast() {
+    const toast = document.getElementById('statusToast');
+    if (toast) {
+        toast.classList.toggle('minimized');
+    }
+}
+
+function initStatusToastDrag() {
+    const statusToast = document.getElementById('statusToast');
+    const statusHeader = statusToast.querySelector('.status-toast-header');
+
+    statusHeader.addEventListener('mousedown', function(e) {
+        if (e.target.classList.contains('status-control-btn')) return;
+        
+        isStatusDragging = true;
+        const rect = statusToast.getBoundingClientRect();
+        statusDragOffsetX = e.clientX - rect.left;
+        statusDragOffsetY = e.clientY - rect.top;
+        
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', function(e) {
+        if (!isStatusDragging) return;
+        
+        const newX = e.clientX - statusDragOffsetX;
+        const newY = e.clientY - statusDragOffsetY;
+        
+        const maxX = window.innerWidth - statusToast.offsetWidth;
+        const maxY = window.innerHeight - statusToast.offsetHeight;
+        
+        statusToast.style.left = Math.max(0, Math.min(newX, maxX)) + 'px';
+        statusToast.style.bottom = 'auto';
+        statusToast.style.top = Math.max(0, Math.min(newY, maxY)) + 'px';
+    });
+
+    document.addEventListener('mouseup', function() {
+        if (isStatusDragging) {
+            isStatusDragging = false;
+            document.body.style.userSelect = '';
+        }
+    });
+}
+
 function startProgressSimulation() {
     clearInterval(progressInterval);
     currentProgress = 0;
     const bar = document.getElementById('statusProgressBar');
     if (bar) {
         bar.style.width = '0%';
-        bar.style.background = '#fff';
+        bar.style.background = 'var(--text-primary)';
     }
     
     // Initial jump
@@ -1084,6 +1137,6 @@ function finishProgress() {
     if (text) text.textContent = '播放开始';
     
     statusToastTimeout = setTimeout(() => {
-        hideStatusToast();
+        closeStatusToast();
     }, 3000);
 }

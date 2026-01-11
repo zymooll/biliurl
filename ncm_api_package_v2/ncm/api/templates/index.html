@@ -297,12 +297,21 @@
 
     <!-- Status Toast -->
     <div id="statusToast" class="status-toast">
-        <div class="status-content">
-            <span id="statusIcon" class="status-spinner"></span>
-            <span id="statusText">正在处理...</span>
+        <div class="status-toast-header">
+            <div class="status-toast-title">当前步骤</div>
+            <div class="status-toast-controls">
+                <button class="status-control-btn" onclick="toggleStatusToast()">−</button>
+                <button class="status-control-btn" onclick="closeStatusToast()">×</button>
+            </div>
         </div>
-        <div class="status-progress-track">
-            <div id="statusProgressBar" class="status-progress-bar"></div>
+        <div class="status-toast-body">
+            <div class="status-content">
+                <span id="statusIcon" class="status-spinner"></span>
+                <span id="statusText">正在处理...</span>
+            </div>
+            <div class="status-progress-track">
+                <div id="statusProgressBar" class="status-progress-bar"></div>
+            </div>
         </div>
     </div>
 </body>
