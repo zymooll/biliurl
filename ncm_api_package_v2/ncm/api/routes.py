@@ -8,6 +8,9 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import quote
+import threading
+from typing import Optional
+from datetime import datetime, timedelta
 from ncm.core.login import LoginProtocol
 from ncm.core.music import UserInteractive
 from ncm.core.lyrics import process_lyrics_matching
@@ -24,12 +27,130 @@ API_BASE_URL = "http://localhost:3002/"
 # 静态文件目录路径（用于挂载）
 STATIC_FILES_DIR = STATIC_DIR
 
-# 创建线程池用于CPU密集型任务（如FFmpeg）
-# 默认使用CPU核心数，可以根据需要调整
-import multiprocessing
-MAX_WORKERS = multiprocessing.cpu_count()
-video_executor = ThreadPoolExecutor(max_workers=MAX_WORKERS, thread_name_prefix="VideoGen")
-print(f"🚀 视频生成线程池已初始化: {MAX_WORKERS} 个工作线程")
+# 动态线程池管理器
+class DynamicThreadPoolManager:
+    """动态线程池管理器 - 根据任务数量自动扩展和收缩"""
+    
+    def __init__(self, min_workers: int = 2, max_workers: Optional[int] = None, idle_timeout: int = 60):
+        """
+        初始化动态线程池管理器
+        
+        参数:
+            min_workers: 最小保留的工作线程数（默认2个）
+            max_workers: 最大工作线程数（默认为CPU核心数）
+            idle_timeout: 空闲超时时间（秒），超过此时间后收缩到最小线程数（默认60秒）
+        """
+        import multiprocessing
+        self.min_workers = min_workers
+        self.max_workers = max_workers or multiprocessing.cpu_count()
+        self.idle_timeout = idle_timeout
+        
+        # 初始化为最小线程数
+        self._current_workers = min_workers
+        self._executor = ThreadPoolExecutor(max_workers=min_workers, thread_name_prefix="VideoGen")
+        
+        # 任务计数器和锁
+        self._active_tasks = 0
+        self._total_submitted_tasks = 0
+        self._lock = threading.Lock()
+        
+        # 最后活动时间
+        self._last_activity_time = datetime.now()
+        
+        # 监控线程
+        self._monitor_thread = None
+        self._running = True
+        self._start_monitor()
+        
+        print(f"🚀 动态线程池已初始化: 初始 {min_workers} 个线程, 最大 {self.max_workers} 个线程, 空闲超时 {idle_timeout}秒")
+    
+    def submit(self, fn, *args, **kwargs):
+        """提交任务到线程池"""
+        with self._lock:
+            self._active_tasks += 1
+            self._total_submitted_tasks += 1
+            self._last_activity_time = datetime.now()
+            
+            # 检查是否需要扩展线程池
+            if self._active_tasks > self._current_workers and self._current_workers < self.max_workers:
+                self._expand_pool()
+        
+        # 包装任务以便在完成时更新计数器
+        def wrapped_task():
+            try:
+                result = fn(*args, **kwargs)
+                return result
+            finally:
+                with self._lock:
+                    self._active_tasks -= 1
+                    self._last_activity_time = datetime.now()
+        
+        return self._executor.submit(wrapped_task)
+    
+    def _expand_pool(self):
+        """扩展线程池（需要在锁内调用）"""
+        new_workers = min(self._current_workers + 1, self.max_workers)
+        if new_workers > self._current_workers:
+            print(f"📈 扩展线程池: {self._current_workers} -> {new_workers} 个线程 (活跃任务: {self._active_tasks})")
+            
+            # 创建新的线程池
+            old_executor = self._executor
+            self._executor = ThreadPoolExecutor(max_workers=new_workers, thread_name_prefix="VideoGen")
+            self._current_workers = new_workers
+            
+            # 优雅关闭旧线程池（不等待，让任务自然完成）
+            old_executor.shutdown(wait=False)
+    
+    def _shrink_pool(self):
+        """收缩线程池到最小值（需要在锁内调用）"""
+        if self._current_workers > self.min_workers:
+            print(f"📉 收缩线程池: {self._current_workers} -> {self.min_workers} 个线程 (空闲超时)")
+            
+            # 创建新的线程池
+            old_executor = self._executor
+            self._executor = ThreadPoolExecutor(max_workers=self.min_workers, thread_name_prefix="VideoGen")
+            self._current_workers = self.min_workers
+            
+            # 优雅关闭旧线程池
+            old_executor.shutdown(wait=False)
+    
+    def _start_monitor(self):
+        """启动监控线程，定期检查是否需要收缩线程池"""
+        def monitor():
+            while self._running:
+                time.sleep(10)  # 每10秒检查一次
+                
+                with self._lock:
+                    # 如果没有活跃任务且超过空闲超时时间，收缩线程池
+                    if self._active_tasks == 0:
+                        idle_time = (datetime.now() - self._last_activity_time).total_seconds()
+                        if idle_time >= self.idle_timeout and self._current_workers > self.min_workers:
+                            self._shrink_pool()
+        
+        self._monitor_thread = threading.Thread(target=monitor, daemon=True, name="PoolMonitor")
+        self._monitor_thread.start()
+    
+    def get_status(self) -> dict:
+        """获取线程池状态信息"""
+        with self._lock:
+            idle_time = (datetime.now() - self._last_activity_time).total_seconds()
+            return {
+                "current_workers": self._current_workers,
+                "min_workers": self.min_workers,
+                "max_workers": self.max_workers,
+                "active_tasks": self._active_tasks,
+                "total_submitted": self._total_submitted_tasks,
+                "idle_seconds": round(idle_time, 2)
+            }
+    
+    def shutdown(self, wait=True):
+        """关闭线程池"""
+        self._running = False
+        if self._executor:
+            self._executor.shutdown(wait=wait)
+
+# 创建动态线程池管理器
+video_executor = DynamicThreadPoolManager(min_workers=2, idle_timeout=60)
 
 def init_login_handler():
     global login_handler
@@ -98,6 +219,16 @@ def verify_access_password(access_password: str = Cookie(None), access_hash: str
         return AccessPasswordManager.verify_hash(access_password)
     
     return False
+
+@router.get("/threadpool/status")
+async def get_threadpool_status():
+    """获取线程池状态信息"""
+    status = video_executor.get_status()
+    return create_json_response({
+        "code": 200,
+        "message": "线程池状态获取成功",
+        "data": status
+    })
 
 @router.get("/")
 async def root(access_password: str = Cookie(None), access_hash: str = Query(None)):
