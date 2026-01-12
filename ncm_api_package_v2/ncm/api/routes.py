@@ -964,11 +964,40 @@ async def play_vrc_polymorphic(
         
         mp3_url = audio_result.get("url") if audio_result.get("success") else None
         
-        # --- 🎯 多态分流逻辑（基于实际VRChat测试结果优化）---
+        # --- 🎯 多态分流逻辑（调整优先级，优先匹配图片请求）---
         
-        # A. 🎵 播放器请求 (AVPro / ProTV) - **优先判断，特征最明显**
-        # 实测特征：User-Agent 包含 NSPlayer/WMFSDK，或者有 Range 请求头
+        # A. 🖼️ 图片请求 (VRCImageDownloader) - **最高优先级，避免被误判**
+        # 识别特征：
+        # 1. Accept 头明确包含 image/ 类型
+        # 2. 或者 User-Agent 包含特定模式且没有其他明显特征
+        # 3. 或者特定的Unity请求模式
+        
         user_agent_original = request.headers.get("user-agent", "")
+        
+        # 强特征：明确的图片Accept头
+        has_image_accept = "image/" in accept
+        
+        # 弱特征：可能的Unity图片请求（当没有明确Accept时的备用判断）
+        might_be_unity_image = (
+            "unityplayer" in user_agent.lower() and
+            "image" not in accept and  # 没有明确拒绝图片
+            "NSPlayer" not in user_agent_original and  # 不是播放器
+            "WMFSDK" not in user_agent_original and
+            range_header is None  # 不是分段下载
+        )
+        
+        if has_image_accept or might_be_unity_image:
+            print(f"🖼️ [VRC多态] ✅ 检测到图片请求 (VRCImageDownloader)")
+            if has_image_accept:
+                print(f"   🎯 识别依据: Accept明确包含image/ -> {accept}")
+            else:
+                print(f"   🎯 识别依据: Unity模式推断 -> UA:{user_agent_original[:50]}")
+            if not cover_url:
+                raise HTTPException(status_code=404, detail="无法获取封面图片")
+            return RedirectResponse(url=cover_url, status_code=302)
+        
+        # B. 🎵 播放器请求 (AVPro / ProTV) - **第二优先级，特征明显**
+        # 实测特征：User-Agent 包含 NSPlayer/WMFSDK，或者有 Range 请求头
         is_player_request = (
             "NSPlayer" in user_agent_original or 
             "WMFSDK" in user_agent_original or
@@ -981,15 +1010,6 @@ async def play_vrc_polymorphic(
             if not mp3_url:
                 raise HTTPException(status_code=404, detail="无法获取音频链接")
             return RedirectResponse(url=mp3_url, status_code=302)
-        
-        # B. 🖼️ 图片请求 (VRCImageDownloader) 
-        # 识别特征：Accept 头明确包含 image/ 类型
-        if "image/" in accept:
-            print(f"🖼️ [VRC多态] ✅ 检测到图片请求 (VRCImageDownloader)")
-            print(f"   🎯 识别依据: Accept包含image/ -> {accept}")
-            if not cover_url:
-                raise HTTPException(status_code=404, detail="无法获取封面图片")
-            return RedirectResponse(url=cover_url, status_code=302)
         
         # C. 📝 文本/歌词请求 (VRCStringDownloader 或浏览器)
         # 识别特征：剩余情况，可能包含 Mozilla、UnityPlayer 等，Accept 通常是 */* 或 text/*
