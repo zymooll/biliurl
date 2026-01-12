@@ -22,3 +22,5 @@ store.db
 store.db-*
 
 test/
+ncm_api_package_v2/ncm/core/__pycache__/*
+ncm_api_package_v2/ncm/api/__pycache__/*
