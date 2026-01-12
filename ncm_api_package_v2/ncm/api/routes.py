@@ -1070,55 +1070,60 @@ def play_vrc_main(
     })
 
 # ============================
-# 接口 2: 静态图片代理 (无参数)
+# 接口 2: 静态图片代理 (修改此部分)
 # ============================
 @router.get("/play/vrc/cover")
 def play_vrc_cover_proxy(request: Request):
-    client_ip = get_real_ip(request)
+    """
+    固定 URL，通过 IP 查找刚才记录的 ID，并返回缩小的图片
+    """
+    # 1. 根据 IP 查 SongID (Session 逻辑)
     song_id = get_song_id_by_ip(request)
     
     if not song_id:
-        print(f"❌ [图片] IP未命中: {client_ip}")
         return Response(status_code=404)
 
-    # 1. 获取封面 URL
+    # 2. 获取封面链接并强制缩小尺寸
     cover_url = ""
     try:
-        # 增加缓存，避免每次都请求网易云详情 API
         detail = retry_request(UserInteractive.getSongDetail, str(song_id), max_retries=2)
         if detail and detail.get("songs"):
+            # 获取原始 URL
             cover_url = detail["songs"][0]["al"]["picUrl"]
-            # 强制使用 https 并压缩一下尺寸 (网易云支持在 URL 后加参数限制大小，500x500 够用了)
-            if cover_url.startswith("http://"):
-                cover_url = cover_url.replace("http://", "https://")
-            cover_url += "?param=500y500" 
+            
+            # 🔥 核心修改：强制让网易云返回 512x512 的缩略图
+            # 这样图片大小会从几MB变成几十KB，且分辨率完全符合 VRChat 要求
+            if cover_url:
+                if "?" in cover_url:
+                    cover_url = cover_url.split("?")[0]
+                cover_url += "?param=512y512" 
+                
+            print(f"🖼️ [图片] 处理后的地址: {cover_url}")
     except Exception as e:
+        print(f"❌ 获取封面详情失败: {e}")
         return Response(status_code=500)
 
+    # 3. 后端代理下载并转发
     if not cover_url: return Response(status_code=404)
 
-    # 2. 代理下载并返回
     try:
-        print(f"🖼️ [图片] 正在从网易云下载: {cover_url}")
+        # 下载缩放后的图片
         img_resp = requests.get(cover_url, timeout=10)
-        
-        # 强制设置正确的 Content-Type
         content_type = img_resp.headers.get("content-type", "image/jpeg")
         
-        # 返回 Response 并添加禁用缓存的 Header
+        # 返回二进制流，并禁用缓存防止旧图干扰
         return Response(
             content=img_resp.content, 
             media_type=content_type,
             headers={
                 "Cache-Control": "no-cache, no-store, must-revalidate",
-                "Pragma": "no-cache",
-                "Expires": "0",
-                "X-Content-Type-Options": "nosniff" # 防止浏览器猜测类型
+                "X-Content-Type-Options": "nosniff"
             }
         )
     except Exception as e:
-        print(f"❌ [图片] 代理下载失败: {e}")
+        print(f"❌ 图片下载失败: {e}")
         return Response(status_code=500)
+    
 # ============================
 # 调试接口：查看当前缓存
 # ============================
