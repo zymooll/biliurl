@@ -1005,8 +1005,8 @@ async def play_vrc_polymorphic(
             lyric_response = retry_request(
                 requests.get,
                 lyric_url,
-                max_retries=2,
-                timeout=5
+                max_retries=5,
+                timeout=20
             )
             lyric_data = lyric_response.json()
         except Exception as e:
