@@ -916,9 +916,27 @@ async def play_vrc_polymorphic(
     range_header = request.headers.get("range")
     
     print(f"🔍 [VRC多态] 请求分析: ID={song_id}")
-    print(f"   User-Agent: {user_agent[:100]}")
-    print(f"   Accept: {accept}")
-    print(f"   Range: {range_header}")
+    print(f"   📋 完整请求头列表:")
+    for header_name, header_value in request.headers.items():
+        print(f"      {header_name}: {header_value}")
+    print(f"   🎯 关键识别头:")
+    print(f"      User-Agent: {request.headers.get('user-agent', 'N/A')}")
+    print(f"      Accept: {request.headers.get('accept', 'N/A')}")
+    print(f"      Range: {request.headers.get('range', 'N/A')}")
+    print(f"      Content-Type: {request.headers.get('content-type', 'N/A')}")
+    print(f"      Connection: {request.headers.get('connection', 'N/A')}")
+    print(f"   🌐 客户端信息:")
+    print(f"      Host: {request.headers.get('host', 'N/A')}")
+    print(f"      Referer: {request.headers.get('referer', 'N/A')}")
+    print(f"      Origin: {request.headers.get('origin', 'N/A')}")
+    print(f"   🔄 其他可能有用的头:")
+    print(f"      X-Unity-Version: {request.headers.get('x-unity-version', 'N/A')}")
+    print(f"      X-Requested-With: {request.headers.get('x-requested-with', 'N/A')}")
+    print(f"      Cache-Control: {request.headers.get('cache-control', 'N/A')}")
+    print(f"   📊 请求来源: {request.client.host if request.client else 'Unknown'}")
+    print(f"   🔗 请求方法: {request.method}")
+    print(f"   📍 完整URL: {request.url}")
+    print("-" * 80)
     
     # 获取歌曲基础数据（歌曲详情、音频链接、歌词）
     try:
