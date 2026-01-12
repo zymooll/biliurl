@@ -25,6 +25,8 @@ router = APIRouter()
 login_handler = None
 API_BASE_URL = "http://localhost:3002/"
 
+
+
 # 静态文件目录路径（用于挂载）
 STATIC_FILES_DIR = STATIC_DIR
 
@@ -157,7 +159,7 @@ def init_login_handler():
     global login_handler
     login_handler = LoginProtocol()
 
-def retry_request(func, *args, max_retries=3, timeout=10, **kwargs):
+def retry_request(func, *args, max_retries=5, timeout=10, **kwargs):
     """
     重试机制包装器
     
@@ -854,50 +856,103 @@ async def stream_audio_proxy(
 
 
 @router.get("/play/vrc")
-async def debug_sniffer(
+def play_vrc_polymorphic(
     request: Request,
     id: str = None,
-    keywords: str = None
+    keywords: str = None,
+    level: str = "standard",
+    unblock: bool = False
 ):
     """
-    🔍 抓包嗅探模式
-    不返回任何真实的媒体，只负责在控制台打印请求头，
-    并返回 JSON 供 StringDownloader 查看。
+    VRChat 终极多态接口 - 代理模式
+    解决 VRCImageDownloader 不支持重定向的问题
     """
+    if not id and not keywords:
+        raise HTTPException(status_code=400, detail="缺少参数")
+
+    song_id = id
+
+    # 1. 搜索逻辑 (同步执行，防止阻塞)
+    if keywords and (not song_id or not song_id.isdigit()):
+        print(f"🔍 [搜索] {keywords}")
+        res = retry_request(UserInteractive.searchSong, keywords, limit=1)
+        songs = res.get("result", {}).get("songs", [])
+        if not songs: raise HTTPException(404, "未找到歌曲")
+        song_id = songs[0].get("id")
     
-    # 1. 获取所有请求头
-    headers = dict(request.headers)
+    # 2. 获取 Header 特征
+    headers = request.headers
+    user_agent = headers.get("user-agent", "").lower()
+    accept = headers.get("accept", "").lower()
+    range_header = headers.get("range")
+
+    print(f"🕵️ ID:{song_id} | UA:{user_agent[:20]}... | Accept:{accept[:20]}...")
+
+    # === A. 视频播放器 (AVPro) ===
+    # 特征：Range 头，或者 UA 是播放器
+    # 策略：302 重定向 (AVPro 支持跳转)
+    if range_header or "nsplayer" in user_agent or "wmfsdk" in user_agent:
+        print(f"🎬 [判决] 视频流 -> 302 Redirect")
+        cookie = load_cookie()
+        audio_res = retry_request(UserInteractive.getDownloadUrl, song_id, level, unblock, cookie)
+        mp3_url = audio_res.get("url")
+        if not mp3_url: raise HTTPException(404, "无音频链接")
+        return RedirectResponse(url=mp3_url, status_code=302, headers={"Cache-Control": "no-cache"})
+
+    # === B. 图片下载器 (VRCImageDownloader) ===
+    # 特征：Accept 包含 "image"
+    # 策略：服务器下载图片 -> 直接返回二进制数据 (Proxy)
+    # ⚠️ VRChat 文档明确禁止 302 跳转，必须直接返回文件
+    if "image" in accept:
+        print(f"🖼️ [判决] 封面图片 -> Proxy Mode (无重定向)")
+        
+        # 1. 获取封面 URL
+        detail = retry_request(UserInteractive.getSongDetail, str(song_id))
+        if not detail or not detail.get("songs"): raise HTTPException(404, "无歌曲信息")
+        cover_url = detail["songs"][0]["al"]["picUrl"]
+        
+        # 2. 后端下载图片
+        try:
+            # 下载图片 (设置超时)
+            img_resp = requests.get(cover_url, timeout=5)
+            img_data = img_resp.content
+            content_type = img_resp.headers.get("content-type", "image/jpeg")
+            
+            # 3. 直接返回二进制数据
+            return Response(content=img_data, media_type=content_type)
+        except Exception as e:
+            print(f"❌ 图片代理失败: {e}")
+            raise HTTPException(500, "图片下载失败")
+
+    # === C. 文本/其他 (VRCStringDownloader) ===
+    # 特征：Accept 不含 image
+    # 策略：返回 JSON
+    print(f"📝 [判决] 歌词文本 -> JSON")
     
-    # 2. 提取关键信息
-    user_agent = headers.get("user-agent", "无")
-    accept = headers.get("accept", "无")
-    content_type = headers.get("content-type", "无")
-    range_header = headers.get("range", "无")
-    host = request.client.host
-    
-    # 3. 在服务器控制台打印显眼的日志
-    print("\n" + "="*50)
-    print(f"📡 [收到请求] 来自 IP: {host}")
-    print(f"🎵 参数 ID: {id} | Keywords: {keywords}")
-    print("-" * 20 + " 关键特征 " + "-" * 20)
-    print(f"👉 User-Agent: {user_agent}")
-    print(f"👉 Accept:     {accept}")
-    print(f"👉 Range:      {range_header}")
-    print("-" * 50)
-    
-    # 4. 构造返回数据
-    # 如果是 StringDownloader，它会把这个 JSON 显示在 Udon 日志里
-    # 如果是 ImageDownloader，它会因为这只是文本不是图片而报错，但这正是我们想测试的
-    response_data = {
-        "msg": "这是一个调试响应",
-        "your_headers": {
-            "User-Agent": user_agent,
-            "Accept": accept,
-            "Range": range_header
-        }
-    }
-    
-    return JSONResponse(content=response_data)
+    # 获取歌名
+    song_name = "未知歌曲"
+    try:
+        detail = retry_request(UserInteractive.getSongDetail, str(song_id))
+        if detail and detail.get("songs"):
+            song_name = detail["songs"][0]["name"]
+    except: pass
+
+    # 获取歌词
+    lrc_text = "暂无歌词"
+    try:
+        lyric_url = f"https://lyrics.0061226.xyz/api/lyric?id={song_id}"
+        lrc_resp = requests.get(lyric_url, timeout=2).json() # 短超时
+        if lrc_resp.get("code") == 200:
+            fetched_lrc = lrc_resp.get("data", {}).get("lyrics", {}).get("lrc", {}).get("lyric", "")
+            if fetched_lrc: lrc_text = fetched_lrc
+    except:
+        lrc_text = "歌词加载超时"
+
+    return JSONResponse({
+        "songName": song_name,
+        "lyric": lrc_text
+    })
+
 
 @router.get("/lyric")
 async def get_lyric(id: int):
