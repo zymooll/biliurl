@@ -1074,40 +1074,51 @@ def play_vrc_main(
 # ============================
 @router.get("/play/vrc/cover")
 def play_vrc_cover_proxy(request: Request):
-    """
-    固定 URL，通过 IP 查找刚才记录的 ID
-    """
-    # 1. 查表
+    client_ip = get_real_ip(request)
     song_id = get_song_id_by_ip(request)
     
     if not song_id:
-        # 找不到记录时，返回 404
+        print(f"❌ [图片] IP未命中: {client_ip}")
         return Response(status_code=404)
 
-    print(f"🖼️ [图片] IP命中: {get_real_ip(request)} -> ID {song_id}")
-
-    # 2. 获取封面链接
+    # 1. 获取封面 URL
     cover_url = ""
     try:
+        # 增加缓存，避免每次都请求网易云详情 API
         detail = retry_request(UserInteractive.getSongDetail, str(song_id), max_retries=2)
         if detail and detail.get("songs"):
             cover_url = detail["songs"][0]["al"]["picUrl"]
+            # 强制使用 https 并压缩一下尺寸 (网易云支持在 URL 后加参数限制大小，500x500 够用了)
+            if cover_url.startswith("http://"):
+                cover_url = cover_url.replace("http://", "https://")
+            cover_url += "?param=500y500" 
     except Exception as e:
-        print(f"❌ 获取封面详情失败: {e}")
         return Response(status_code=500)
 
-    # 3. 代理下载并返回
     if not cover_url: return Response(status_code=404)
 
+    # 2. 代理下载并返回
     try:
-        # 下载图片
-        img_resp = requests.get(cover_url, timeout=5)
+        print(f"🖼️ [图片] 正在从网易云下载: {cover_url}")
+        img_resp = requests.get(cover_url, timeout=10)
+        
+        # 强制设置正确的 Content-Type
         content_type = img_resp.headers.get("content-type", "image/jpeg")
-        return Response(content=img_resp.content, media_type=content_type)
+        
+        # 返回 Response 并添加禁用缓存的 Header
+        return Response(
+            content=img_resp.content, 
+            media_type=content_type,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+                "X-Content-Type-Options": "nosniff" # 防止浏览器猜测类型
+            }
+        )
     except Exception as e:
-        print(f"❌ 图片下载失败: {e}")
+        print(f"❌ [图片] 代理下载失败: {e}")
         return Response(status_code=500)
-
 # ============================
 # 调试接口：查看当前缓存
 # ============================
