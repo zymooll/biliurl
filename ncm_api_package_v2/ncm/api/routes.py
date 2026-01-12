@@ -25,6 +25,8 @@ router = APIRouter()
 login_handler = None
 API_BASE_URL = "http://localhost:3002/"
 
+# 用户绑定的ID存储 (内存缓存)
+user_id_bindings = {}
 
 
 # 静态文件目录路径（用于挂载）
@@ -1231,6 +1233,7 @@ async def generate_video_for_vrchat(
     threads: int | None = None,
     gpu_device: str | None = None,
     mv: bool = True,
+    user: str = None,
     access_password: str = Cookie(None),
     access_hash: str = Query(None)
 ):
@@ -1247,6 +1250,7 @@ async def generate_video_for_vrchat(
         threads: 手动指定FFmpeg线程数，留空让FFmpeg自行分配
         gpu_device: Linux VAAPI 设备路径，例如 /dev/dri/renderD128
         mv: 是否优先尝试获取MV（默认True，设为False跳过MV检查）
+        user: 用户标识（用于绑定最后播放的歌曲ID）
         access_password: 访问密码hash（通过Cookie传递）
         access_hash: 访问密码hash（通过URL参数传递，优先级高于Cookie）
         
@@ -1255,12 +1259,23 @@ async def generate_video_for_vrchat(
     """
     request_start_time = time.time()
     print(f"\n{'='*60}")
-    print(f"🎬 [视频请求] ID={id}, keywords={keywords}, level={level}, mv={mv}")
+    print(f"🎬 [视频请求] ID={id}, keywords={keywords}, level={level}, mv={mv}, user={user}")
     
     # 验证访问密码或hash
     if not verify_access_password(access_password, access_hash):
         print(f"❌ [视频请求] 访问密码验证失败")
         raise HTTPException(status_code=403, detail="需要访问密码。请先在Web UI中登录，或在URL中提供access_hash参数。")
+    
+    # 处理用户绑定逻辑
+    if user:
+        if id:
+            # 如果同时提供了 user 和 id，保存绑定关系
+            user_id_bindings[user] = id
+            print(f"💾 [用户绑定] 用户 '{user}' 绑定到 ID: {id}")
+        elif user in user_id_bindings:
+            # 如果只提供了 user，使用之前绑定的 id
+            id = user_id_bindings[user]
+            print(f"🔗 [用户绑定] 用户 '{user}' 使用绑定的 ID: {id}")
     
     if not id and not keywords:
         print(f"❌ [视频请求] 缺少必要参数")

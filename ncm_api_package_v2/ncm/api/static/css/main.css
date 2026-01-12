@@ -110,6 +110,73 @@ body {
     transform: rotate(180deg);
 }
 
+/* User Toggle Button */
+.user-toggle {
+    position: fixed;
+    top: 30px;
+    right: 90px;
+    width: 48px;
+    height: 48px;
+    border: 1px solid var(--border-color);
+    border-radius: 50%;
+    background: var(--bg-color);
+    color: var(--text-primary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition);
+    box-shadow: var(--shadow-md);
+    z-index: 1001;
+}
+
+.user-toggle:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md), 0 8px 25px rgba(0,0,0,0.15);
+}
+
+.user-toggle svg {
+    width: 20px;
+    height: 20px;
+    transition: transform 0.3s ease;
+}
+
+.user-toggle:hover svg {
+    transform: scale(1.1);
+}
+
+/* User Panel */
+.user-panel {
+    position: fixed;
+    top: 85px;
+    right: 30px;
+    width: 300px;
+    background: var(--card-bg);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: var(--shadow-md), 0 8px 30px rgba(0,0,0,0.12);
+    z-index: 1000;
+    animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.user-panel-content {
+    display: flex;
+    flex-direction: column;
+}
+
 /* Header */
 .header {
     text-align: center;

@@ -31,6 +31,36 @@
         </svg>
     </button>
 
+    <!-- User Binding Button -->
+    <button class="user-toggle" onclick="toggleUserPanel()" id="userToggle" title="用户绑定">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+            <circle cx="12" cy="7" r="4"></circle>
+        </svg>
+    </button>
+
+    <!-- User Panel -->
+    <div class="user-panel" id="userPanel" style="display: none;">
+        <div class="user-panel-content">
+            <h3 style="margin: 0 0 15px 0; font-size: 1.1rem; color: var(--text-primary);">用户绑定</h3>
+            <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 15px;">
+                绑定用户名后，系统会记住您最后播放的歌曲ID
+            </p>
+            <div class="input-group" style="flex-direction: column; gap: 10px;">
+                <input type="text" id="userInput" class="input" placeholder="输入用户名" maxlength="20" style="font-size: 0.9rem;">
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-primary" onclick="saveUser()" style="flex: 1; font-size: 0.9rem;">保存</button>
+                    <button class="btn btn-secondary" onclick="clearUser()" style="flex: 1; font-size: 0.9rem;">清除</button>
+                </div>
+            </div>
+            <div id="currentUserDisplay" style="display: none; margin-top: 12px; padding: 10px; background: rgba(0, 112, 243, 0.1); border-radius: 6px;">
+                <p style="margin: 0; font-size: 0.85rem; color: var(--text-primary);">
+                    当前用户: <strong id="currentUserName"></strong>
+                </p>
+            </div>
+        </div>
+    </div>
+
     <!-- Floating Tabs moved outside Header for logical separation -->
     <div class="tabs" data-active="search">
         <button id="btnSearch" class="tab-btn active" onclick="switchMode('search')">关键词搜索</button>

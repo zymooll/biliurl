@@ -15,6 +15,76 @@ let isDragging = false;
 let dragOffsetX = 0;
 let dragOffsetY = 0;
 
+// ============ User Management ============
+function getCookie(name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+    return null;
+}
+
+function setCookie(name, value, days = 365) {
+    const date = new Date();
+    date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+    const expires = "expires=" + date.toUTCString();
+    document.cookie = name + "=" + value + ";" + expires + ";path=/";
+}
+
+function getUser() {
+    return getCookie('ncm_user');
+}
+
+function toggleUserPanel() {
+    const panel = document.getElementById('userPanel');
+    if (panel.style.display === 'none' || !panel.style.display) {
+        panel.style.display = 'block';
+        const user = getUser();
+        if (user) {
+            document.getElementById('userInput').value = user;
+            document.getElementById('currentUserName').textContent = user;
+            document.getElementById('currentUserDisplay').style.display = 'block';
+        } else {
+            document.getElementById('userInput').value = '';
+            document.getElementById('currentUserDisplay').style.display = 'none';
+        }
+    } else {
+        panel.style.display = 'none';
+    }
+}
+
+function saveUser() {
+    const username = document.getElementById('userInput').value.trim();
+    if (!username) {
+        alert('请输入用户名');
+        return;
+    }
+    
+    if (username.length > 20) {
+        alert('用户名不能超过20个字符');
+        return;
+    }
+    
+    setCookie('ncm_user', username);
+    document.getElementById('currentUserName').textContent = username;
+    document.getElementById('currentUserDisplay').style.display = 'block';
+    showStatusToast('用户绑定成功', 'success');
+}
+
+function clearUser() {
+    setCookie('ncm_user', '', -1);
+    document.getElementById('userInput').value = '';
+    document.getElementById('currentUserDisplay').style.display = 'none';
+    showStatusToast('用户已清除', 'success');
+}
+
+function addUserParam(params) {
+    const user = getUser();
+    if (user) {
+        params.append('user', user);
+    }
+    return params;
+}
+
 // ============ Theme Management ============
 function toggleTheme() {
     const currentTheme = document.documentElement.getAttribute('data-theme');
@@ -311,6 +381,9 @@ async function playSong(id, name, artist) {
     if (accessHash) {
         params.append('access_hash', accessHash);
     }
+    
+    // Add user parameter
+    addUserParam(params);
     
     const videoUrl = `/video?${params.toString()}`;
     const fullApiUrl = window.location.origin + videoUrl;
@@ -826,13 +899,6 @@ function copyApiHash() {
     }, 2000);
 }
 
-function getCookie(name) {
-    const value = `; ${document.cookie}`;
-    const parts = value.split(`; ${name}=`);
-    if (parts.length === 2) return parts.pop().split(';').shift();
-    return null;
-}
-
 // ============ Playlist Functions ============
 async function loadPlaylist() {
     const input = document.getElementById('playlistInput').value.trim();
@@ -967,7 +1033,28 @@ window.onload = function() {
     loadApiHash();
     initFloatingVideoDrag();
     initStatusToastDrag();
+    initUserPanelClickOutside();
+    
+    // Load and display user on page load
+    const user = getUser();
+    if (user) {
+        console.log('已绑定用户:', user);
+    }
 };
+
+// 点击外部关闭用户面板
+function initUserPanelClickOutside() {
+    document.addEventListener('click', function(e) {
+        const userPanel = document.getElementById('userPanel');
+        const userToggle = document.getElementById('userToggle');
+        
+        if (userPanel && userPanel.style.display !== 'none') {
+            if (!userPanel.contains(e.target) && !userToggle.contains(e.target)) {
+                userPanel.style.display = 'none';
+            }
+        }
+    });
+}
 
 // ============ Status Toast Functions ============
 let statusToastTimeout;
