@@ -855,103 +855,111 @@ async def stream_audio_proxy(
         raise HTTPException(status_code=500, detail=f"代理错误: {str(e)}")
 
 
+# === 核心：IP 会话缓存 ===
+# 格式: { "1.2.3.4": {"id": 123456, "time": 1700000000} }
+ip_session_cache = {}
+
+def update_ip_session(request: Request, song_id: int):
+    """记录该 IP 正在请求的歌曲 ID"""
+    client_ip = request.client.host
+    # 如果经过了 Cloudflare，需要获取真实 IP
+    if "cf-connecting-ip" in request.headers:
+        client_ip = request.headers["cf-connecting-ip"]
+        
+    print(f"💾 [Session] IP {client_ip} -> Song {song_id}")
+    ip_session_cache[client_ip] = {
+        "id": song_id,
+        "time": time.time()
+    }
+
+def get_song_id_by_ip(request: Request):
+    """根据 IP 获取刚才记录的歌曲 ID"""
+    client_ip = request.client.host
+    if "cf-connecting-ip" in request.headers:
+        client_ip = request.headers["cf-connecting-ip"]
+        
+    session = ip_session_cache.get(client_ip)
+    if session:
+        # 可选：设置过期时间（例如 5 分钟）
+        if time.time() - session["time"] > 300:
+            return None
+        return session["id"]
+    return None
+
+# ============================
+# 接口 1: 主入口 (视频/歌词/注册状态)
+# ============================
 @router.get("/play/vrc")
-def play_vrc_polymorphic(
+def play_vrc_main(
     request: Request,
     id: str = None,
     keywords: str = None,
     level: str = "standard",
     unblock: bool = False
 ):
-    """
-    VRChat 终极多态接口 - 代理模式
-    解决 VRCImageDownloader 不支持重定向的问题
-    """
-    if not id and not keywords:
-        raise HTTPException(status_code=400, detail="缺少参数")
+    if not id and not keywords: raise HTTPException(400, "缺参数")
 
+    # 1. 解析 ID
     song_id = id
-
-    # 1. 搜索逻辑 (同步执行，防止阻塞)
     if keywords and (not song_id or not song_id.isdigit()):
-        print(f"🔍 [搜索] {keywords}")
-        res = retry_request(UserInteractive.searchSong, keywords, limit=1)
-        songs = res.get("result", {}).get("songs", [])
-        if not songs: raise HTTPException(404, "未找到歌曲")
-        song_id = songs[0].get("id")
+        # ... (你的搜索逻辑) ...
+        # 假设搜索到了
+        song_id = "搜索到的ID"
     
-    # 2. 获取 Header 特征
+    # 2. 🔥 关键步骤：记录 IP 状态 🔥
+    try:
+        update_ip_session(request, int(song_id))
+    except:
+        pass
+
+    # 3. 判断请求类型 (视频 vs 歌词)
     headers = request.headers
     user_agent = headers.get("user-agent", "").lower()
-    accept = headers.get("accept", "").lower()
     range_header = headers.get("range")
-
-    print(f"🕵️ ID:{song_id} | UA:{user_agent[:20]}... | Accept:{accept[:20]}...")
-
-    # === A. 视频播放器 (AVPro) ===
-    # 特征：Range 头，或者 UA 是播放器
-    # 策略：302 重定向 (AVPro 支持跳转)
-    if range_header or "nsplayer" in user_agent or "wmfsdk" in user_agent:
-        print(f"🎬 [判决] 视频流 -> 302 Redirect")
-        cookie = load_cookie()
-        audio_res = retry_request(UserInteractive.getDownloadUrl, song_id, level, unblock, cookie)
-        mp3_url = audio_res.get("url")
-        if not mp3_url: raise HTTPException(404, "无音频链接")
-        return RedirectResponse(url=mp3_url, status_code=302, headers={"Cache-Control": "no-cache"})
-
-    # === B. 图片下载器 (VRCImageDownloader) ===
-    # 特征：Accept 包含 "image"
-    # 策略：服务器下载图片 -> 直接返回二进制数据 (Proxy)
-    # ⚠️ VRChat 文档明确禁止 302 跳转，必须直接返回文件
-    if "image" in accept:
-        print(f"🖼️ [判决] 封面图片 -> Proxy Mode (无重定向)")
-        
-        # 1. 获取封面 URL
-        detail = retry_request(UserInteractive.getSongDetail, str(song_id))
-        if not detail or not detail.get("songs"): raise HTTPException(404, "无歌曲信息")
-        cover_url = detail["songs"][0]["al"]["picUrl"]
-        
-        # 2. 后端下载图片
-        try:
-            # 下载图片 (设置超时)
-            img_resp = requests.get(cover_url, timeout=5)
-            img_data = img_resp.content
-            content_type = img_resp.headers.get("content-type", "image/jpeg")
-            
-            # 3. 直接返回二进制数据
-            return Response(content=img_data, media_type=content_type)
-        except Exception as e:
-            print(f"❌ 图片代理失败: {e}")
-            raise HTTPException(500, "图片下载失败")
-
-    # === C. 文本/其他 (VRCStringDownloader) ===
-    # 特征：Accept 不含 image
-    # 策略：返回 JSON
-    print(f"📝 [判决] 歌词文本 -> JSON")
     
-    # 获取歌名
-    song_name = "未知歌曲"
-    try:
-        detail = retry_request(UserInteractive.getSongDetail, str(song_id))
-        if detail and detail.get("songs"):
-            song_name = detail["songs"][0]["name"]
-    except: pass
+    # 视频播放器 -> 302 重定向到 MP3
+    if range_header or "nsplayer" in user_agent or "wmfsdk" in user_agent:
+        print(f"🎬 [视频] ID {song_id}")
+        cookie = load_cookie()
+        audio_res = requests.get(f"你的获取URL逻辑").json() # 伪代码
+        return RedirectResponse(audio_res["url"], status_code=302)
+    
+    # 默认 -> 返回歌词 JSON (StringDownloader)
+    print(f"📝 [歌词] ID {song_id}")
+    # ... 获取歌词逻辑 ...
+    return JSONResponse({"songName": "...", "lyric": "..."})
 
-    # 获取歌词
-    lrc_text = "暂无歌词"
-    try:
-        lyric_url = f"https://lyrics.0061226.xyz/api/lyric?id={song_id}"
-        lrc_resp = requests.get(lyric_url, timeout=2).json() # 短超时
-        if lrc_resp.get("code") == 200:
-            fetched_lrc = lrc_resp.get("data", {}).get("lyrics", {}).get("lrc", {}).get("lyric", "")
-            if fetched_lrc: lrc_text = fetched_lrc
-    except:
-        lrc_text = "歌词加载超时"
 
-    return JSONResponse({
-        "songName": song_name,
-        "lyric": lrc_text
-    })
+# ============================
+# 接口 2: 静态图片代理 (无参数!)
+# ============================
+@router.get("/play/vrc/cover")
+def play_vrc_cover_proxy(request: Request):
+    """
+    这是一个固定 URL，不带任何参数。
+    它通过请求者的 IP 来判断该返回哪张图。
+    """
+    # 1. 查表：这个 IP 刚才请求了哪首歌？
+    song_id = get_song_id_by_ip(request)
+    
+    if not song_id:
+        print(f"⚠️ [图片] IP {request.client.host} 未找到播放记录，返回默认图")
+        # 可以返回一张 404 默认封面
+        return Response(content=b"", status_code=404)
+
+    print(f"🖼️ [图片] IP {request.client.host} -> 命中缓存 ID {song_id}")
+
+    # 2. 获取封面 URL
+    # ... 调用网易云接口获取 cover_url ...
+    # 假设拿到了 cover_url
+    
+    # 3. 代理下载并返回二进制
+    try:
+        img_resp = requests.get(cover_url, timeout=5)
+        return Response(content=img_resp.content, media_type="image/jpeg")
+    except Exception as e:
+        print(f"❌ 图片下载失败: {e}")
+        return Response(status_code=500)
 
 
 @router.get("/lyric")
