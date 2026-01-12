@@ -964,6 +964,13 @@ async def play_vrc_polymorphic(
         
         mp3_url = audio_result.get("url") if audio_result.get("success") else None
         
+        # 防缓存头，避免VRChat因URL相同而复用响应
+        no_cache_headers = {
+            "Cache-Control": "no-store, no-cache, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+        
         # --- 🎯 多态分流逻辑（调整优先级，优先匹配图片请求）---
         
         # A. 🖼️ 图片请求 (VRCImageDownloader) - **最高优先级，避免被误判**
@@ -994,7 +1001,7 @@ async def play_vrc_polymorphic(
                 print(f"   🎯 识别依据: Unity模式推断 -> UA:{user_agent_original[:50]}")
             if not cover_url:
                 raise HTTPException(status_code=404, detail="无法获取封面图片")
-            return RedirectResponse(url=cover_url, status_code=302)
+            return RedirectResponse(url=cover_url, status_code=302, headers=no_cache_headers)
         
         # B. 🎵 播放器请求 (AVPro / ProTV) - **第二优先级，特征明显**
         # 实测特征：User-Agent 包含 NSPlayer/WMFSDK，或者有 Range 请求头
@@ -1009,7 +1016,7 @@ async def play_vrc_polymorphic(
             print(f"   🎯 识别依据: NSPlayer={'NSPlayer' in user_agent_original}, WMFSDK={'WMFSDK' in user_agent_original}, Range={range_header is not None}")
             if not mp3_url:
                 raise HTTPException(status_code=404, detail="无法获取音频链接")
-            return RedirectResponse(url=mp3_url, status_code=302)
+            return RedirectResponse(url=mp3_url, status_code=302, headers=no_cache_headers)
         
         # C. 📝 文本/歌词请求 (VRCStringDownloader 或浏览器)
         # 识别特征：剩余情况，可能包含 Mozilla、UnityPlayer 等，Accept 通常是 */* 或 text/*
@@ -1053,18 +1060,24 @@ async def play_vrc_polymorphic(
                 "mp3_url": mp3_url,
                 "level": level
             }
-            return create_json_response(response_data)
+            response = create_json_response(response_data)
+            # 添加防缓存头
+            for key, value in no_cache_headers.items():
+                response.headers[key] = value
+            return response
         else:
             # 返回纯文本歌词 (VRCStringDownloader 更容易处理)
             if lrc_content:
                 return PlainTextResponse(
                     content=lrc_content,
-                    media_type="text/plain; charset=utf-8"
+                    media_type="text/plain; charset=utf-8",
+                    headers=no_cache_headers
                 )
             else:
                 return PlainTextResponse(
                     content=f"{song_name} - {artist_name}\n[00:00.00]暂无歌词",
-                    media_type="text/plain; charset=utf-8"
+                    media_type="text/plain; charset=utf-8",
+                    headers=no_cache_headers
                 )
         
     except HTTPException:
