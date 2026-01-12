@@ -917,64 +917,38 @@ async def stream_audio_proxy(
 # 格式: { "1.2.3.4": {"id": 123456, "time": 1700000000} }
 # ... (前面的代码保持不变) ...
 
-# ============================
-# 🔧 核心工具：IP 会话管理与提取
-# ============================
+# ==========================================
+# 🔧 核心工具：IP 会话管理
+# ==========================================
 
 # 格式: { "114.5.1.4": {"id": 123456, "time": 1700000000} }
 ip_session_cache = {}
 
 def get_real_ip(request: Request) -> str:
-    """
-    统一的 IP 提取逻辑，优先识别 Cloudflare
-    """
+    """统一的 IP 提取逻辑，优先识别 Cloudflare"""
     headers = request.headers
-    # 1. 优先 Cloudflare 真实 IP
     if "cf-connecting-ip" in headers:
         return headers["cf-connecting-ip"]
-    
-    # 2. 其次 X-Forwarded-For (可能包含多个，取第一个)
     if "x-forwarded-for" in headers:
         return headers["x-forwarded-for"].split(",")[0].strip()
-        
-    # 3. 最后使用直接连接的 IP
     return request.client.host
 
-def update_ip_session(request: Request, song_id: int):
-    """注册阶段：记录 IP -> SongID"""
-    client_ip = get_real_ip(request)
-    
-    # 存入缓存
-    ip_session_cache[client_ip] = {
-        "id": song_id,
-        "time": time.time()
-    }
-    
-    # 打印当前缓存的所有 Key，方便调试看有没有存进去
-    print(f"✅ [Session注册] IP: {client_ip} -> Song: {song_id}")
-    # print(f"   当前缓存池大小: {len(ip_session_cache)}")
-
 def get_song_id_by_ip(request: Request):
-    """读取阶段：根据 IP 查 SongID"""
+    """读取阶段：根据 IP 查 SongID (仅用于封面接口)"""
     client_ip = get_real_ip(request)
-    
     session = ip_session_cache.get(client_ip)
-    
     if session:
-        # 可选：检查是否过期 (比如 10 分钟)
+        # 10 分钟有效期
         if time.time() - session["time"] > 600:
-            print(f"⚠️ [Session过期] IP: {client_ip}")
             return None
         return session["id"]
-    
-    # 调试：如果没有找到，打印一下现在的 IP 是什么
-    print(f"❌ [Session未命中] 正在查找 IP: {client_ip}")
-    print(f"   🔍 缓存池中现有的 IP: {list(ip_session_cache.keys())}")
     return None
 
-
+# ==========================================
+# 接口 1: VRChat 主入口 (处理音频 + 歌词)
+# ==========================================
 @router.get("/play/vrc")
-def play_vrc_main(
+async def play_vrc_main(
     request: Request,
     background_tasks: BackgroundTasks, 
     id: str = None,
@@ -982,137 +956,145 @@ def play_vrc_main(
     level: str = "standard",
     unblock: bool = False
 ):
-    song_id = id 
-
-    # 1. 识别 ID
-    if keywords and (not song_id or not str(song_id).isdigit()):
+    # 1. 解析当前请求的目标 Song ID
+    target_id = id 
+    if keywords and (not target_id or not str(target_id).isdigit()):
         try:
+            # 搜索逻辑
             res = UserInteractive.searchSong(keywords, limit=1)
             songs = res.get("result", {}).get("songs", [])
-            if songs: song_id = songs[0].get("id")
+            if songs: target_id = songs[0].get("id")
         except: pass
 
-    if not song_id:
+    if not target_id:
         raise HTTPException(status_code=400, detail="ID Missing")
 
-    song_id = int(song_id)
+    target_id = int(target_id)
     client_ip = get_real_ip(request)
-
-    # 2. Session 与 预解析逻辑
-    if client_ip not in ip_session_cache or ip_session_cache[client_ip]["id"] != song_id:
-        ip_session_cache[client_ip] = {"id": song_id, "url": None, "time": time.time()}
-
     headers = request.headers
     user_agent = headers.get("user-agent", "").lower()
     range_header = headers.get("range") 
-    
+
+    # 判断是否为音频播放器发出的请求
+    # VRChat 播放器通常带 Range 头，或者特定的 UA
+    is_player_request = range_header or any(ua in user_agent for ua in ["nsplayer", "wmfsdk", "lav", "altstream"])
+
     # ==========================================
-    # 🎬 分支 A: 视频播放器 (重定向音频)
+    # 🎬 分支 A: 音频播放器请求 -> 直接重定向
+    # 核心：完全信任 URL 里的 target_id，不依赖 Session 缓存
     # ==========================================
-    if range_header or any(ua in user_agent for ua in ["nsplayer", "wmfsdk", "lav", "altstream"]):
-        cached_url = ip_session_cache[client_ip].get("url")
-        if cached_url:
-            return RedirectResponse(url=cached_url, status_code=302)
-        
+    if is_player_request:
         cookie = load_cookie()
-        audio_res = UserInteractive.getDownloadUrl(song_id, level, unblock, cookie)
+        audio_res = UserInteractive.getDownloadUrl(target_id, level, unblock, cookie)
         mp3_url = audio_res.get("url")
+        
         if mp3_url:
-            ip_session_cache[client_ip]["url"] = mp3_url
-            return RedirectResponse(url=mp3_url, status_code=302)
-        raise HTTPException(404, "Audio Not Found")
+            print(f"🔊 [Player] 播放请求: ID={target_id} -> 重定向音频")
+            return RedirectResponse(
+                url=mp3_url, 
+                status_code=302,
+                headers={
+                    # 极其重要：禁止播放器缓存 302 重定向结果
+                    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                    "Pragma": "no-cache"
+                }
+            )
+        raise HTTPException(404, "Audio URL Not Found")
 
     # ==========================================
-    # 📝 分支 B: Udon 脚本 (返回歌词 JSON)
+    # 📝 分支 B: Udon 脚本请求 -> 返回 JSON 歌词
     # ==========================================
-    # ⚡ 后台任务：预解析音源，供播放器稍后使用
-    async def pre_resolve_audio(ip, s_id, lvl, unb):
-        try:
-            cookie = load_cookie()
-            res = UserInteractive.getDownloadUrl(s_id, lvl, unb, cookie)
-            if res.get("url"): ip_session_cache[ip]["url"] = res["url"]
-        except: pass
+    # 只有脚本请求时，才更新 IP Session，供封面接口使用
+    ip_session_cache[client_ip] = {
+        "id": target_id,
+        "time": time.time()
+    }
+    print(f"📝 [Udon] 脚本请求: ID={target_id} -> 更新 Session 并返回歌词")
 
-    background_tasks.add_task(pre_resolve_audio, client_ip, song_id, level, unblock)
-
-    # 获取歌名 (详情通常很快)
+    # 获取歌名
     song_name = "未知歌曲"
     try:
-        detail = UserInteractive.getSongDetail(str(song_id))
+        detail = UserInteractive.getSongDetail(str(target_id))
         if detail and detail.get("songs"):
             song_name = detail["songs"][0]["name"]
     except: pass
 
-    # 获取歌词 (⚡ 缩短第一次尝试的超时，防止 Udon 超时)
-    # 注意：这里我们只给歌词获取 5 秒时间，如果还没拿到，先返回“加载中”
-    success, lrc_text, error = fetch_lyrics_with_retry(song_id, max_retries=2, timeout=5)
+    # 获取歌词
+    success, lrc_text, error = fetch_lyrics_with_retry(target_id, max_retries=2, timeout=5)
     
     return JSONResponse(
         content={
             "songName": song_name,
-            "lyric": lrc_text if success else "[00:00.00] 歌词加载中，请稍后..."
+            "lyric": lrc_text if success else "[00:00.00] 歌词加载中..."
         },
         headers={
             "Access-Control-Allow-Origin": "*",
-            "Cache-Control": "no-cache"
+            "Cache-Control": "no-store" # 禁止缓存 JSON
         }
     )
 
-# ============================
-# 接口 2: 静态图片代理 (修改此部分)
-# ============================
+# ==========================================
+# 接口 2: 静态图片代理 (通过 IP 识别 ID)
+# ==========================================
 @router.get("/play/vrc/cover")
 def play_vrc_cover_proxy(request: Request):
-    """
-    固定 URL，通过 IP 查找刚才记录的 ID，并返回缩小的图片
-    """
-    # 1. 根据 IP 查 SongID (Session 逻辑)
+    """通过 IP 查找刚才 Udon 脚本注册的 ID，返回封面"""
     song_id = get_song_id_by_ip(request)
     
     if not song_id:
+        print(f"🖼️ [Cover] Session 未命中, IP: {get_real_ip(request)}")
         return Response(status_code=404)
 
-    # 2. 获取封面链接并强制缩小尺寸
-    cover_url = ""
     try:
-        detail = retry_request(UserInteractive.getSongDetail, str(song_id), max_retries=2)
-        if detail and detail.get("songs"):
-            # 获取原始 URL
-            cover_url = detail["songs"][0]["al"]["picUrl"]
+        detail = UserInteractive.getSongDetail(str(song_id))
+        if not (detail and detail.get("songs")):
+            return Response(status_code=404)
             
-            # 🔥 核心修改：强制让网易云返回 512x512 的缩略图
-            # 这样图片大小会从几MB变成几十KB，且分辨率完全符合 VRChat 要求
-            if cover_url:
-                if "?" in cover_url:
-                    cover_url = cover_url.split("?")[0]
-                cover_url += "?param=512y512" 
-                
-            print(f"🖼️ [图片] 处理后的地址: {cover_url}")
-    except Exception as e:
-        print(f"❌ 获取封面详情失败: {e}")
-        return Response(status_code=500)
-
-    # 3. 后端代理下载并转发
-    if not cover_url: return Response(status_code=404)
-
-    try:
-        # 下载缩放后的图片
+        cover_url = detail["songs"][0]["al"]["picUrl"]
+        if cover_url:
+            if "?" in cover_url: cover_url = cover_url.split("?")[0]
+            cover_url += "?param=512y512" # 强制缩小提升加载速度
+            
         img_resp = requests.get(cover_url, timeout=10)
-        content_type = img_resp.headers.get("content-type", "image/jpeg")
-        
-        # 返回二进制流，并禁用缓存防止旧图干扰
         return Response(
             content=img_resp.content, 
-            media_type=content_type,
-            headers={
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-                "X-Content-Type-Options": "nosniff"
-            }
+            media_type=img_resp.headers.get("content-type", "image/jpeg"),
+            headers={"Cache-Control": "no-cache, no-store"}
         )
     except Exception as e:
-        print(f"❌ 图片下载失败: {e}")
+        print(f"❌ [Cover] 获取失败: {e}")
         return Response(status_code=500)
+# ==========================================
+# 接口 2: 静态图片代理 (通过 IP 识别 ID)
+# ==========================================
+@router.get("/play/vrc/cover")
+def play_vrc_cover_proxy(request: Request):
+    """通过 IP 查找刚才 Udon 脚本注册的 ID，返回封面"""
+    song_id = get_song_id_by_ip(request)
     
+    if not song_id:
+        print(f"🖼️ [Cover] Session 未命中, IP: {get_real_ip(request)}")
+        return Response(status_code=404)
+
+    try:
+        detail = UserInteractive.getSongDetail(str(song_id))
+        if not (detail and detail.get("songs")):
+            return Response(status_code=404)
+            
+        cover_url = detail["songs"][0]["al"]["picUrl"]
+        if cover_url:
+            if "?" in cover_url: cover_url = cover_url.split("?")[0]
+            cover_url += "?param=512y512" # 强制缩小提升加载速度
+            
+        img_resp = requests.get(cover_url, timeout=10)
+        return Response(
+            content=img_resp.content, 
+            media_type=img_resp.headers.get("content-type", "image/jpeg"),
+            headers={"Cache-Control": "no-cache, no-store"}
+        )
+    except Exception as e:
+        print(f"❌ [Cover] 获取失败: {e}")
+        return Response(status_code=500)
 # ============================
 # 调试接口：查看当前缓存
 # ============================
