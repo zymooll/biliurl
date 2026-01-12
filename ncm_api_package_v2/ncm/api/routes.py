@@ -980,82 +980,103 @@ def get_song_id_by_ip(request: Request):
 @router.get("/play/vrc")
 def play_vrc_main(
     request: Request,
-    background_tasks: BackgroundTasks, # 引入后台任务
+    background_tasks: BackgroundTasks, 
     id: str = None,
     keywords: str = None,
     level: str = "standard",
     unblock: bool = False
 ):
-    # ... (前面的 ID 识别逻辑不变) ...
-    
-    client_ip = get_real_ip(request)
-    song_id = int(song_id)
+    # 1. 变量初始化，防止 UnboundLocalError
+    song_id = id 
 
-    # 获取请求特征
-    headers = request.headers
-    user_agent = headers.get("user-agent", "").lower()
-    range_header = headers.get("range")
-    
-    # 注册或更新 Session
+    # 2. 如果提供了关键词搜索，尝试解析出 ID
+    if keywords and (not song_id or not str(song_id).isdigit()):
+        print(f"🔍 [搜索] 收到关键词: {keywords}")
+        try:
+            # 这里调用你的搜索函数
+            res = UserInteractive.searchSong(keywords, limit=1)
+            songs = res.get("result", {}).get("songs", [])
+            if songs:
+                song_id = songs[0].get("id")
+                print(f"✅ [搜索] 匹配成功 ID: {song_id}")
+        except Exception as e:
+            print(f"❌ [搜索] 失败: {e}")
+
+    # 3. 检查最终是否拿到了 ID
+    if not song_id:
+        raise HTTPException(status_code=400, detail="无法识别歌曲 ID 或搜索无结果")
+
+    # 确保是整数类型
+    song_id = int(song_id)
+    client_ip = get_real_ip(request)
+
+    # 4. 注册或更新 Session (包含音源缓存槽位)
+    # 如果 IP 换了歌，清空之前的解析 URL 缓存
     if client_ip not in ip_session_cache or ip_session_cache[client_ip]["id"] != song_id:
         ip_session_cache[client_ip] = {
             "id": song_id,
-            "url": None, # 初始 URL 为空
+            "url": None, 
             "time": time.time()
         }
 
+    # 5. 获取请求特征 (判断是播放器还是 Udon 脚本)
+    headers = request.headers
+    user_agent = headers.get("user-agent", "").lower()
+    range_header = headers.get("range") 
+    
     # ==========================================
     # 🎬 分支 A: 视频播放器 (AVPro / UnityVideo)
     # ==========================================
     if range_header or "nsplayer" in user_agent or "wmfsdk" in user_agent or "lav" in user_agent:
-        # ⚡ 核心逻辑：检查缓存里是否有解析好的 URL
+        # ⚡ 检查是否有预解析好的缓存
         cached_url = ip_session_cache[client_ip].get("url")
-        
         if cached_url:
             print(f"🚀 [音源] 命中预解析缓存，立即重定向: {song_id}")
             return RedirectResponse(url=cached_url, status_code=302)
         
-        # 如果缓存没有（比如播放器比脚本还快），则现场解析
-        print(f"⏳ [音源] 无缓存，开始现场解析 (慢路径): {song_id}")
+        # 无缓存则现场解析
+        print(f"⏳ [音源] 无缓存，现场解析音源: {song_id}")
         cookie = load_cookie()
         audio_res = retry_request(UserInteractive.getDownloadUrl, song_id, level, unblock, cookie)
         mp3_url = audio_res.get("url")
         if mp3_url:
-            ip_session_cache[client_ip]["url"] = mp3_url # 存入缓存
+            ip_session_cache[client_ip]["url"] = mp3_url
             return RedirectResponse(url=mp3_url, status_code=302)
-        raise HTTPException(404, "音源解析失败")
+        raise HTTPException(404, "无法获取音频链接")
 
     # ==========================================
-    # 📝 分支 B: 歌词/文本下载器 (Udon 脚本)
+    # 📝 分支 B: 歌词文本下载器 (Udon 脚本)
     # ==========================================
-    print(f"📝 [歌词] 脚本请求 -> 返回 JSON 并启动后台预解析")
+    print(f"📝 [歌词] 脚本请求 -> 返回 JSON 并启动后台预解析: {song_id}")
     
-    # ⚡ 核心逻辑：在返回歌词的同时，偷偷在后台开始解析音源
+    # ⚡ 启动后台预解析任务 (解决换歌不换曲的关键)
     async def pre_resolve_audio(ip, s_id, lvl, unb):
         try:
-            print(f"🏗️ [后台] 开始为 {ip} 预解析音源: {s_id}")
+            print(f"🏗️ [后台] 开始为 {ip} 预解析音源...")
             cookie = load_cookie()
+            # 注意：这里直接调用，不使用重试装饰器以减小开销
             res = UserInteractive.getDownloadUrl(s_id, lvl, unb, cookie)
             if res.get("url"):
                 ip_session_cache[ip]["url"] = res["url"]
-                print(f"✅ [后台] 预解析完成: {s_id}")
+                print(f"✅ [后台] 预解析音源已存入缓存")
         except Exception as e:
-            print(f"❌ [后台] 预解析失败: {e}")
+            print(f"❌ [后台] 预解析报错: {e}")
 
     background_tasks.add_task(pre_resolve_audio, client_ip, song_id, level, unblock)
 
-    # 原有的歌词返回逻辑内容
+    # 返回歌词 JSON
     song_name = "未知歌曲"
     try:
         detail = retry_request(UserInteractive.getSongDetail, str(song_id))
         if detail and detail.get("songs"):
             song_name = detail["songs"][0]["name"]
     except: pass
-    
+
     success, lrc_text, error = fetch_lyrics_with_retry(song_id, max_retries=3, timeout=15)
-    return JSONResponse({"songName": song_name, "lyric": lrc_text if success else error})
-
-
+    return JSONResponse({
+        "songName": song_name,
+        "lyric": lrc_text if success else error
+    })
 
 # ============================
 # 接口 2: 静态图片代理 (修改此部分)
