@@ -964,36 +964,39 @@ async def play_vrc_polymorphic(
         
         mp3_url = audio_result.get("url") if audio_result.get("success") else None
         
-        # --- 🎯 多态分流逻辑 ---
+        # --- 🎯 多态分流逻辑（基于实际VRChat测试结果优化）---
         
-        # A. 图片请求 (VRCImageDownloader)
-        # 识别特征：Accept 头明确包含 image/
-        if "image/" in accept:
-            print(f"🖼️ [VRC多态] 检测到图片请求，重定向到封面")
-            if not cover_url:
-                raise HTTPException(status_code=404, detail="无法获取封面图片")
-            return RedirectResponse(url=cover_url, status_code=302)
-        
-        # B. 视频/音频播放器请求 (AVPro / ProTV)
-        # 识别特征：User-Agent 包含 avpro/unity/player 或者有 Range 请求头
+        # A. 🎵 播放器请求 (AVPro / ProTV) - **优先判断，特征最明显**
+        # 实测特征：User-Agent 包含 NSPlayer/WMFSDK，或者有 Range 请求头
+        user_agent_original = request.headers.get("user-agent", "")
         is_player_request = (
-            "avpro" in user_agent or 
-            "unity" in user_agent or 
-            "player" in user_agent or
-            range_header is not None or
-            "video/" in accept or
-            "*/*" in accept
+            "NSPlayer" in user_agent_original or 
+            "WMFSDK" in user_agent_original or
+            range_header is not None
         )
         
-        if is_player_request and not ("text/" in accept or "application/json" in accept):
-            print(f"🎵 [VRC多态] 检测到播放器请求，重定向到MP3")
+        if is_player_request:
+            print(f"🎵 [VRC多态] ✅ 检测到播放器请求 (AVPro/ProTV)")
+            print(f"   🎯 识别依据: NSPlayer={'NSPlayer' in user_agent_original}, WMFSDK={'WMFSDK' in user_agent_original}, Range={range_header is not None}")
             if not mp3_url:
                 raise HTTPException(status_code=404, detail="无法获取音频链接")
             return RedirectResponse(url=mp3_url, status_code=302)
         
-        # C. 文本/歌词请求 (VRCStringDownloader 或默认情况)
-        # 返回歌词数据或JSON格式信息
-        print(f"📝 [VRC多态] 检测到文本请求，返回歌词数据")
+        # B. 🖼️ 图片请求 (VRCImageDownloader) 
+        # 识别特征：Accept 头明确包含 image/ 类型
+        if "image/" in accept:
+            print(f"🖼️ [VRC多态] ✅ 检测到图片请求 (VRCImageDownloader)")
+            print(f"   🎯 识别依据: Accept包含image/ -> {accept}")
+            if not cover_url:
+                raise HTTPException(status_code=404, detail="无法获取封面图片")
+            return RedirectResponse(url=cover_url, status_code=302)
+        
+        # C. 📝 文本/歌词请求 (VRCStringDownloader 或浏览器)
+        # 识别特征：剩余情况，可能包含 Mozilla、UnityPlayer 等，Accept 通常是 */* 或 text/*
+        print(f"📝 [VRC多态] ✅ 检测到文本请求 (VRCStringDownloader/浏览器)")
+        print(f"   🎯 识别依据: 排除法 - 非播放器非图片请求")
+        print(f"   📋 User-Agent: {user_agent_original[:100]}")
+        print(f"   📋 Accept: {accept}")
         
         # 3. 获取歌词
         lyric_data = None
