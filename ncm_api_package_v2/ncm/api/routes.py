@@ -197,8 +197,64 @@ def retry_request(func, *args, max_retries=5, timeout=10, **kwargs):
         except Exception as e:
             # 其他异常直接抛出，不重试
             raise e
+
+def fetch_lyrics_with_retry(song_id, max_retries=3, timeout=15):
+    """
+    带重试机制的歌词获取函数
     
-    raise Exception(f"请求失败: {str(last_error)}")
+    参数:
+        song_id: 歌曲ID
+        max_retries: 最大重试次数 (默认3次)
+        timeout: 超时时间 (默认15秒)
+    
+    返回:
+        tuple: (success, lyrics_text, error_message)
+    """
+    last_error = None
+    
+    for attempt in range(max_retries):
+        try:
+            if attempt > 0:
+                wait_time = min(2 ** attempt, 8)  # 指数退避，最多8秒
+                print(f"🔄 [歌词] 重试第 {attempt + 1}/{max_retries} 次，等待 {wait_time}秒... ID:{song_id}")
+                time.sleep(wait_time)
+            
+            print(f"🎵 [歌词] 请求歌词 ID:{song_id} (尝试 {attempt + 1}/{max_retries}, 超时:{timeout}s)")
+            lyric_url = f"https://lyrics.0061226.xyz/api/lyric?id={song_id}"
+            resp = requests.get(lyric_url, timeout=timeout)
+            data = resp.json()
+            
+            if data.get("code") == 200:
+                lyrics_data = data.get("data", {}).get("lyrics", {})
+                lrc = lyrics_data.get("lrc", {})
+                
+                if lrc and lrc.get("lyric"):
+                    print(f"✅ [歌词] 成功获取歌词 ID:{song_id} (尝试 {attempt + 1}/{max_retries})")
+                    return True, lrc["lyric"], None
+                else:
+                    print(f"⚠️ [歌词] 歌词内容为空 ID:{song_id}")
+                    return True, "暂无歌词", None
+            else:
+                error_msg = f"API返回错误: code={data.get('code')}, msg={data.get('message', '未知错误')}"
+                print(f"⚠️ [歌词] {error_msg} ID:{song_id}")
+                last_error = error_msg
+                
+        except (requests.Timeout, requests.ConnectionError) as e:
+            last_error = f"网络超时: {str(e)}"
+            print(f"⚠️ [歌词] {last_error} ID:{song_id} (尝试 {attempt + 1}/{max_retries})")
+            
+        except requests.RequestException as e:
+            last_error = f"请求异常: {str(e)}"
+            print(f"⚠️ [歌词] {last_error} ID:{song_id} (尝试 {attempt + 1}/{max_retries})")
+            
+        except Exception as e:
+            last_error = f"未知错误: {str(e)}"
+            print(f"❌ [歌词] {last_error} ID:{song_id} (尝试 {attempt + 1}/{max_retries})")
+    
+    # 所有重试都失败了
+    final_error = f"歌词请求失败 (重试{max_retries}次): {last_error}"
+    print(f"❌ [歌词] {final_error} ID:{song_id}")
+    return False, final_error, last_error
 
 def create_json_response(content, status_code=200):
     """创建 JSON 响应并移除 Content-Length 头，防止协议错误"""
@@ -928,11 +984,11 @@ def play_vrc_main(
     level: str = "standard",
     unblock: bool = False
 ):
+    # 1. 参数检查
     if not id and not keywords: raise HTTPException(400, "缺参数")
 
-    # 1. 确定 Song ID
+    # 2. 确定 Song ID (支持关键词搜索)
     song_id = id
-    # (简化的搜索逻辑)
     if keywords and (not song_id or not song_id.isdigit()):
         print(f"🔍 [搜索] {keywords}")
         try:
@@ -941,34 +997,60 @@ def play_vrc_main(
             if songs: song_id = songs[0].get("id")
         except: pass
     
-    # 2. 🔥 必须在这里立刻注册 Session 🔥
-    # 无论后面是视频还是歌词，只要带了 ID，就先记下来
+    if not song_id: raise HTTPException(404, "未找到歌曲")
+
+    # 3. 🔥 核心：无论谁来访问，先根据 IP 注册 Session 🔥
     try:
-        if song_id:
-            update_ip_session(request, int(song_id))
+        update_ip_session(request, int(song_id))
     except Exception as e:
         print(f"❌ Session注册报错: {e}")
 
-    # 3. 分流逻辑
+    # 4. 获取请求特征
     headers = request.headers
     user_agent = headers.get("user-agent", "").lower()
-    range_header = headers.get("range")
+    range_header = headers.get("range") # 视频播放器通常会带 Range 头
     
-    # 视频播放器 (AVPro) -> 302
-    if range_header or "nsplayer" in user_agent or "wmfsdk" in user_agent:
-        print(f"🎬 [视频] ID {song_id}")
-        cookie = load_cookie()
-        audio_res = retry_request(UserInteractive.getDownloadUrl, song_id, level, unblock, cookie)
-        mp3_url = audio_res.get("url")
-        if mp3_url:
-            return RedirectResponse(url=mp3_url, status_code=302, headers={"Cache-Control": "no-cache"})
-        else:
-            raise HTTPException(404, "无音频链接")
+    # 打印日志方便调试
+    print(f"🕵️ ID:{song_id} | UA:{user_agent[:20]}... | Range:{range_header}")
 
-    # 默认/歌词 (StringDownloader) -> JSON
-    print(f"📝 [歌词] ID {song_id}")
+    # ==========================================
+    # 🎬 分支 A: 视频播放器 (AVPro / UnityVideo)
+    # ==========================================
+    # 判断依据: 
+    # 1. 带有 Range 头 (用于缓冲)
+    # 2. UA 包含 nsplayer (AVPro) 或 wmfsdk
+    # 3. UA 包含 lav/ffmpeg (某些PC播放器)
+    if range_header or "nsplayer" in user_agent or "wmfsdk" in user_agent or "lav" in user_agent:
+        print(f"🎬 [判决] 视频播放器请求 -> 重定向到 MP3")
+        
+        cookie = load_cookie()
+        # 获取 MP3 直链
+        try:
+            audio_res = retry_request(UserInteractive.getDownloadUrl, song_id, level, unblock, cookie)
+            mp3_url = audio_res.get("url")
+            
+            if mp3_url:
+                # 关键：使用 302 重定向，让播放器直接去网易云服务器拉流
+                # 加上 no-cache 防止播放器缓存了错误的 302 结果
+                return RedirectResponse(
+                    url=mp3_url, 
+                    status_code=302, 
+                    headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+                )
+            else:
+                print(f"❌ 获取不到 MP3 链接: {audio_res}")
+                raise HTTPException(404, "无音频链接")
+        except Exception as e:
+            print(f"❌ 音频解析失败: {e}")
+            raise HTTPException(500, "音频解析失败")
+
+    # ==========================================
+    # 📝 分支 B: 歌词/文本下载器 (StringDownloader)
+    # ==========================================
+    # StringDownloader 通常没有 Range 头，且 UA 是 UnityPlayer
+    print(f"📝 [判决] 歌词文本请求 -> 返回 JSON")
     
-    # 获取歌名
+    # 1. 获取歌名
     song_name = "未知歌曲"
     try:
         detail = retry_request(UserInteractive.getSongDetail, str(song_id))
@@ -976,21 +1058,16 @@ def play_vrc_main(
             song_name = detail["songs"][0]["name"]
     except: pass
 
-    # 获取歌词
-    lrc_text = "加载中..."
-    try:
-        lyric_url = f"https://lyrics.0061226.xyz/api/lyric?id={song_id}"
-        resp = requests.get(lyric_url, timeout=1.5).json()
-        if resp.get("code") == 200:
-            lrc_text = resp.get("data", {}).get("lyrics", {}).get("lrc", {}).get("lyric", "") or "暂无歌词"
-    except:
-        lrc_text = "歌词请求超时"
+    # 2. 获取歌词 - 使用重试机制
+    success, lrc_text, error = fetch_lyrics_with_retry(song_id, max_retries=3, timeout=15)
+    if not success:
+        lrc_text = error  # 显示具体的错误信息
 
+    # 返回 JSON 给 Udon 解析
     return JSONResponse({
         "songName": song_name,
         "lyric": lrc_text
     })
-
 
 # ============================
 # 接口 2: 静态图片代理 (无参数)
@@ -1048,40 +1125,64 @@ async def get_lyric(id: int):
         print(f"💾 [Cache] 命中歌词缓存 ID: {id}")
         return cached_data
 
-    try:
-        url = f"https://lyrics.0061226.xyz/api/lyric?id={id}"
-        # 设置超时防止卡死
-        resp = requests.get(url, timeout=10)
-        data = resp.json()
-        
-        # 增加判断逻辑
-        if data.get("code") == 200:
-            lyrics_data = data.get("data", {}).get("lyrics", {})
-            yrc = lyrics_data.get("yrc")
-            lrc = lyrics_data.get("lrc")
-            tlyric = lyrics_data.get("tlyric")
-
-            if yrc and yrc.get("lyric"):
-                print(f"✅ [歌词] ID:{id} 包含逐字歌词 (YRC)")
-                # 尝试处理翻译匹配
-                if tlyric and tlyric.get("lyric"):
-                    processed_lyrics = process_lyrics_matching(yrc["lyric"], tlyric["lyric"])
-                    # 将处理后的歌词放入返回数据中，方便客户端直接使用
-                    data["data"]["lyrics"]["processed"] = processed_lyrics
-                    print(f"✅ [歌词] 已合并翻译 ({len(processed_lyrics)} 行)")
-
-            elif lrc and lrc.get("lyric"):
-                print(f"⚠️ [歌词] ID:{id} 仅包含普通歌词 (LRC)")
-            else:
-                print(f"❌ [歌词] ID:{id} 未找到有效歌词")
+    # 使用重试机制获取完整歌词数据
+    for attempt in range(3):  # 最多重试3次
+        try:
+            if attempt > 0:
+                wait_time = min(2 ** attempt, 8)
+                print(f"🔄 [歌词API] 重试第 {attempt + 1}/3 次，等待 {wait_time}秒... ID:{id}")
+                time.sleep(wait_time)
             
-            # 2. 保存到缓存 (仅当获取成功时)
-            db.save_lyrics(id, data)
+            print(f"🎵 [歌词API] 请求完整歌词数据 ID:{id} (尝试 {attempt + 1}/3, 超时:15s)")
+            url = f"https://lyrics.0061226.xyz/api/lyric?id={id}"
+            resp = requests.get(url, timeout=15)
+            data = resp.json()
+            
+            # 增加判断逻辑
+            if data.get("code") == 200:
+                lyrics_data = data.get("data", {}).get("lyrics", {})
+                yrc = lyrics_data.get("yrc")
+                lrc = lyrics_data.get("lrc")
+                tlyric = lyrics_data.get("tlyric")
+
+                if yrc and yrc.get("lyric"):
+                    print(f"✅ [歌词API] ID:{id} 包含逐字歌词 (YRC)")
+                    # 尝试处理翻译匹配
+                    if tlyric and tlyric.get("lyric"):
+                        processed_lyrics = process_lyrics_matching(yrc["lyric"], tlyric["lyric"])
+                        # 将处理后的歌词放入返回数据中，方便客户端直接使用
+                        data["data"]["lyrics"]["processed"] = processed_lyrics
+                        print(f"✅ [歌词API] 已合并翻译 ({len(processed_lyrics)} 行)")
+
+                elif lrc and lrc.get("lyric"):
+                    print(f"⚠️ [歌词API] ID:{id} 仅包含普通歌词 (LRC)")
+                else:
+                    print(f"❌ [歌词API] ID:{id} 未找到有效歌词")
                 
-        return create_json_response(data)
-    except Exception as e:
-        print(f"❌ 获取歌词失败: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+                # 保存到缓存 (仅当获取成功时)
+                db.save_lyrics(id, data)
+                print(f"✅ [歌词API] 成功获取并缓存歌词 ID:{id} (尝试 {attempt + 1}/3)")
+                return create_json_response(data)
+            else:
+                error_msg = f"API返回错误: code={data.get('code')}, msg={data.get('message', '未知错误')}"
+                print(f"⚠️ [歌词API] {error_msg} ID:{id} (尝试 {attempt + 1}/3)")
+                if attempt == 2:  # 最后一次重试失败
+                    raise HTTPException(status_code=500, detail=error_msg)
+                    
+        except (requests.Timeout, requests.ConnectionError) as e:
+            error_msg = f"网络超时: {str(e)}"
+            print(f"⚠️ [歌词API] {error_msg} ID:{id} (尝试 {attempt + 1}/3)")
+            if attempt == 2:  # 最后一次重试失败
+                raise HTTPException(status_code=500, detail=f"歌词请求失败 (重试3次): {error_msg}")
+        except requests.RequestException as e:
+            error_msg = f"请求异常: {str(e)}"
+            print(f"⚠️ [歌词API] {error_msg} ID:{id} (尝试 {attempt + 1}/3)")
+            if attempt == 2:  # 最后一次重试失败
+                raise HTTPException(status_code=500, detail=f"歌词请求失败 (重试3次): {error_msg}")
+        except Exception as e:
+            error_msg = f"未知错误: {str(e)}"
+            print(f"❌ [歌词API] {error_msg} ID:{id} (尝试 {attempt + 1}/3)")
+            raise HTTPException(status_code=500, detail=error_msg)
 
 @router.get("/search")
 async def search_song(
