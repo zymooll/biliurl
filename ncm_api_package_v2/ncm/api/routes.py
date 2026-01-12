@@ -857,37 +857,66 @@ async def stream_audio_proxy(
 
 # === 核心：IP 会话缓存 ===
 # 格式: { "1.2.3.4": {"id": 123456, "time": 1700000000} }
+# ... (前面的代码保持不变) ...
+
+# ============================
+# 🔧 核心工具：IP 会话管理与提取
+# ============================
+
+# 格式: { "114.5.1.4": {"id": 123456, "time": 1700000000} }
 ip_session_cache = {}
 
-def update_ip_session(request: Request, song_id: int):
-    """记录该 IP 正在请求的歌曲 ID"""
-    client_ip = request.client.host
-    # 如果经过了 Cloudflare，需要获取真实 IP
-    if "cf-connecting-ip" in request.headers:
-        client_ip = request.headers["cf-connecting-ip"]
+def get_real_ip(request: Request) -> str:
+    """
+    统一的 IP 提取逻辑，优先识别 Cloudflare
+    """
+    headers = request.headers
+    # 1. 优先 Cloudflare 真实 IP
+    if "cf-connecting-ip" in headers:
+        return headers["cf-connecting-ip"]
+    
+    # 2. 其次 X-Forwarded-For (可能包含多个，取第一个)
+    if "x-forwarded-for" in headers:
+        return headers["x-forwarded-for"].split(",")[0].strip()
         
-    print(f"💾 [Session] IP {client_ip} -> Song {song_id}")
+    # 3. 最后使用直接连接的 IP
+    return request.client.host
+
+def update_ip_session(request: Request, song_id: int):
+    """注册阶段：记录 IP -> SongID"""
+    client_ip = get_real_ip(request)
+    
+    # 存入缓存
     ip_session_cache[client_ip] = {
         "id": song_id,
         "time": time.time()
     }
+    
+    # 打印当前缓存的所有 Key，方便调试看有没有存进去
+    print(f"✅ [Session注册] IP: {client_ip} -> Song: {song_id}")
+    # print(f"   当前缓存池大小: {len(ip_session_cache)}")
 
 def get_song_id_by_ip(request: Request):
-    """根据 IP 获取刚才记录的歌曲 ID"""
-    client_ip = request.client.host
-    if "cf-connecting-ip" in request.headers:
-        client_ip = request.headers["cf-connecting-ip"]
-        
+    """读取阶段：根据 IP 查 SongID"""
+    client_ip = get_real_ip(request)
+    
     session = ip_session_cache.get(client_ip)
+    
     if session:
-        # 可选：设置过期时间（例如 5 分钟）
-        if time.time() - session["time"] > 300:
+        # 可选：检查是否过期 (比如 10 分钟)
+        if time.time() - session["time"] > 600:
+            print(f"⚠️ [Session过期] IP: {client_ip}")
             return None
         return session["id"]
+    
+    # 调试：如果没有找到，打印一下现在的 IP 是什么
+    print(f"❌ [Session未命中] 正在查找 IP: {client_ip}")
+    print(f"   🔍 缓存池中现有的 IP: {list(ip_session_cache.keys())}")
     return None
 
+
 # ============================
-# 接口 1: 主入口 (视频/歌词/注册状态)
+# 接口 1: 主入口 (歌词/视频/注册中心)
 # ============================
 @router.get("/play/vrc")
 def play_vrc_main(
@@ -899,89 +928,113 @@ def play_vrc_main(
 ):
     if not id and not keywords: raise HTTPException(400, "缺参数")
 
-    # 1. 解析 ID
+    # 1. 确定 Song ID
     song_id = id
+    # (简化的搜索逻辑)
     if keywords and (not song_id or not song_id.isdigit()):
-        # ... (你的搜索逻辑) ...
-        # 假设搜索到了
-        song_id = "搜索到的ID"
+        print(f"🔍 [搜索] {keywords}")
+        try:
+            res = retry_request(UserInteractive.searchSong, keywords, limit=1)
+            songs = res.get("result", {}).get("songs", [])
+            if songs: song_id = songs[0].get("id")
+        except: pass
     
-    # 2. 🔥 关键步骤：记录 IP 状态 🔥
+    # 2. 🔥 必须在这里立刻注册 Session 🔥
+    # 无论后面是视频还是歌词，只要带了 ID，就先记下来
     try:
-        update_ip_session(request, int(song_id))
-    except:
-        pass
+        if song_id:
+            update_ip_session(request, int(song_id))
+    except Exception as e:
+        print(f"❌ Session注册报错: {e}")
 
-    # 3. 判断请求类型 (视频 vs 歌词)
+    # 3. 分流逻辑
     headers = request.headers
     user_agent = headers.get("user-agent", "").lower()
     range_header = headers.get("range")
     
-    # 视频播放器 -> 302 重定向到 MP3
+    # 视频播放器 (AVPro) -> 302
     if range_header or "nsplayer" in user_agent or "wmfsdk" in user_agent:
         print(f"🎬 [视频] ID {song_id}")
         cookie = load_cookie()
-        audio_res = requests.get(f"你的获取URL逻辑").json() # 伪代码
-        return RedirectResponse(audio_res["url"], status_code=302)
-    
-    # 默认 -> 返回歌词 JSON (StringDownloader)
+        audio_res = retry_request(UserInteractive.getDownloadUrl, song_id, level, unblock, cookie)
+        mp3_url = audio_res.get("url")
+        if mp3_url:
+            return RedirectResponse(url=mp3_url, status_code=302, headers={"Cache-Control": "no-cache"})
+        else:
+            raise HTTPException(404, "无音频链接")
+
+    # 默认/歌词 (StringDownloader) -> JSON
     print(f"📝 [歌词] ID {song_id}")
-    # ... 获取歌词逻辑 ...
-    return JSONResponse({"songName": "...", "lyric": "..."})
+    
+    # 获取歌名
+    song_name = "未知歌曲"
+    try:
+        detail = retry_request(UserInteractive.getSongDetail, str(song_id))
+        if detail and detail.get("songs"):
+            song_name = detail["songs"][0]["name"]
+    except: pass
+
+    # 获取歌词
+    lrc_text = "加载中..."
+    try:
+        lyric_url = f"https://lyrics.0061226.xyz/api/lyric?id={song_id}"
+        resp = requests.get(lyric_url, timeout=1.5).json()
+        if resp.get("code") == 200:
+            lrc_text = resp.get("data", {}).get("lyrics", {}).get("lrc", {}).get("lyric", "") or "暂无歌词"
+    except:
+        lrc_text = "歌词请求超时"
+
+    return JSONResponse({
+        "songName": song_name,
+        "lyric": lrc_text
+    })
 
 
 # ============================
-# 接口 2: 静态图片代理 (无参数!)
+# 接口 2: 静态图片代理 (无参数)
 # ============================
-
 @router.get("/play/vrc/cover")
 def play_vrc_cover_proxy(request: Request):
     """
-    这是一个固定 URL，不带任何参数。
-    它通过请求者的 IP 来判断该返回哪张图。
+    固定 URL，通过 IP 查找刚才记录的 ID
     """
-    # 1. 查表：这个 IP 刚才请求了哪首歌？
+    # 1. 查表
     song_id = get_song_id_by_ip(request)
     
     if not song_id:
-        print(f"⚠️ [图片] IP {request.client.host} 未找到播放记录，返回404")
-        return Response(content=b"", status_code=404)
+        # 找不到记录时，返回 404
+        return Response(status_code=404)
 
-    print(f"🖼️ [图片] IP {request.client.host} -> 命中缓存 ID {song_id}")
+    print(f"🖼️ [图片] IP命中: {get_real_ip(request)} -> ID {song_id}")
 
-    # 2. 🔥 [补全逻辑] 获取封面 URL 🔥
+    # 2. 获取封面链接
     cover_url = ""
     try:
-        # 调用网易云接口获取歌曲详情
-        # retry_request 是你在文件前面定义的那个函数
         detail = retry_request(UserInteractive.getSongDetail, str(song_id), max_retries=2)
-        
-        if detail and detail.get("code") == 200 and detail.get("songs"):
+        if detail and detail.get("songs"):
             cover_url = detail["songs"][0]["al"]["picUrl"]
-            print(f"✅ 获取到封面链接: {cover_url[:30]}...")
-        else:
-            print(f"❌ 获取详情失败或无歌曲信息: {detail}")
-            return Response(status_code=404)
-            
     except Exception as e:
-        print(f"❌ 获取封面信息出错: {e}")
+        print(f"❌ 获取封面详情失败: {e}")
         return Response(status_code=500)
-    
-    # 3. 代理下载并返回二进制
+
+    # 3. 代理下载并返回
+    if not cover_url: return Response(status_code=404)
+
     try:
-        if not cover_url:
-            return Response(status_code=404)
-            
-        # 下载图片 (5秒超时)
+        # 下载图片
         img_resp = requests.get(cover_url, timeout=5)
-        
-        # 获取正确的 Content-Type (如 image/jpeg, image/png)
         content_type = img_resp.headers.get("content-type", "image/jpeg")
-        
         return Response(content=img_resp.content, media_type=content_type)
     except Exception as e:
-        print(f"❌ 图片下载/转发失败: {e}")
+        print(f"❌ 图片下载失败: {e}")
         return Response(status_code=500)
+
+# ============================
+# 调试接口：查看当前缓存
+# ============================
+@router.get("/debug/session")
+def debug_session():
+    return ip_session_cache
 
 
 @router.get("/lyric")
