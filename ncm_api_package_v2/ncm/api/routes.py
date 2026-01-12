@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 import requests
 import os
 import time
+import base64
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -853,7 +854,7 @@ async def stream_audio_proxy(
 
 
 @router.get("/play/vrc")
-async def play_vrc_polymorphic(
+def play_vrc_polymorphic(
     request: Request,
     id: str = None,
     keywords: str = None,
@@ -861,131 +862,111 @@ async def play_vrc_polymorphic(
     unblock: bool = False
 ):
     """
-    VRChat 多态链接 API - 增强版特征识别 (修复版)
+    VRChat 多态链接 API - Base64 暴力整合版
     """
     if not id and not keywords:
         raise HTTPException(status_code=400, detail="必须提供 id 或 keywords 参数")
 
     song_id = id
 
-    # === 1. 补全：处理关键词搜索与 song_id 定义 ===
-    # 如果提供了 keywords 且没有提供有效的数字 id，则进行搜索
+    # === 1. 搜索逻辑 ===
     if keywords and (not song_id or not song_id.isdigit()):
-        print(f"🔍 [VRC多态] 收到搜索请求: {keywords}")
+        print(f"🔍 [VRC多态] 搜索: {keywords}")
         search_result = UserInteractive.searchSong(keywords, limit=1)
-        
-        if not search_result or search_result.get("code") != 200:
-            raise HTTPException(status_code=404, detail="搜索失败")
-            
         songs = search_result.get("result", {}).get("songs", [])
         if not songs:
-            raise HTTPException(status_code=404, detail="未找到相关歌曲")
-            
-        first_song = songs[0]
-        song_id = first_song.get("id")
-        song_name_log = first_song.get("name")
-        artist_name_log = first_song.get("ar", [{}])[0].get("name", "未知歌手")
-        print(f"✅ [VRC多态] 搜索匹配: {song_name_log} - {artist_name_log} (ID: {song_id})")
+            raise HTTPException(status_code=404, detail="未找到歌曲")
+        song_id = songs[0].get("id")
     
-    # 确保 song_id 是整数
     try:
         song_id = int(song_id)
-    except (ValueError, TypeError):
-        raise HTTPException(status_code=400, detail="无效的歌曲 ID")
+    except:
+        raise HTTPException(status_code=400, detail="ID无效")
 
-    # === 2. 获取基础信息 (封面 & MP3) ===
-    # 获取歌曲详情（为了封面）
-    # 注意：这里的 song_id 已经是整数，转为 str 传给接口
-    song_detail = retry_request(UserInteractive.getSongDetail, str(song_id), max_retries=2)
-    
-    if song_detail.get("code") != 200 or not song_detail.get("songs"):
-        # 容错：如果获取详情失败，至少不要崩，给个空信息
-        song_info = {}
-        cover_url = None
-        song_name = "未知歌曲"
-    else:
-        song_info = song_detail["songs"][0]
-        cover_url = song_info.get("al", {}).get("picUrl")
-        song_name = song_info.get("name", "未知歌曲")
-    
-    # 获取 Cookie 和 音频链接
-    cookie = load_cookie()
-    audio_result = retry_request(UserInteractive.getDownloadUrl, song_id, level, unblock, cookie, max_retries=2)
-    mp3_url = audio_result.get("url") if audio_result.get("success") else None
-
-    # 防缓存头 (非常重要，防止 VRChat 混淆请求)
-    no_cache_headers = {
-        "Cache-Control": "no-store, no-cache, max-age=0",
-        "Pragma": "no-cache",
-        "Expires": "0"
-    }
-
-    # === 3. 核心侦测逻辑 ===
+    # === 2. 侦测逻辑 ===
     headers = request.headers
     user_agent = headers.get("user-agent", "").lower()
-    accept = headers.get("accept", "").lower()
     range_header = headers.get("range")
 
-    print(f"🕵️ [VRC侦测] ID:{song_id}")
-    print(f"   UA: {user_agent[:60]}...")
-    print(f"   Accept: {accept}")
-    print(f"   Range: {range_header}")
+    # A. 视频播放器 (Video Player) - 保持不变，用于播放 MP3
+    # 只要有 Range 或者 UA 是播放器，就返回直链
+    is_video = range_header or "nsplayer" in user_agent or "wmfsdk" in user_agent or "lav" in user_agent
+    if is_video:
+        print(f"🎬 [判决] 视频流 (ID: {song_id})")
+        cookie = load_cookie()
+        audio_res = retry_request(UserInteractive.getDownloadUrl, song_id, level, unblock, cookie, max_retries=2)
+        mp3_url = audio_res.get("url")
+        if not mp3_url: raise HTTPException(404, "无音频链接")
+        return RedirectResponse(url=mp3_url, status_code=302, headers={"Cache-Control": "no-cache"})
 
-    # --- 优先级 1: 视频播放器 (Video Player) ---
-    # 特征: 带 Range 头 (用于缓冲/拖拽)，或者 UA 包含播放器标识
-    is_video_player = (
-        range_header is not None or 
-        "nsplayer" in user_agent or 
-        "wmfsdk" in user_agent or
-        "lav" in user_agent or 
-        "ffmpeg" in user_agent
-    )
-
-    if is_video_player:
-        print(f"🎬 [判决] -> 视频流 (Video Player)")
-        if not mp3_url: 
-            raise HTTPException(status_code=404, detail="无音频链接")
-        return RedirectResponse(url=mp3_url, status_code=302, headers=no_cache_headers)
-
-    # --- 优先级 2: 图片下载器 (VRCImageDownloader) ---
-    # 特征: Accept 明确包含 'image'。
+    # B. 图片下载器 (Image Downloader)
+    # 虽然我们要用 Base64，但为了防止意外还是保留这个口子
+    accept = headers.get("accept", "").lower()
     if "image" in accept:
-        print(f"🖼️ [判决] -> 封面图片 (VRCImageDownloader - Accept match)")
-        if not cover_url: 
-            # 如果没有封面，为了不让下载器报错，可以考虑重定向到一个默认图片（可选）
-            raise HTTPException(status_code=404, detail="无封面")
-        return RedirectResponse(url=cover_url, status_code=302, headers=no_cache_headers)
+        # 这里逻辑不变，或者你可以直接让它 404 强迫走 StringDownloader
+        print(f"🖼️ [判决] 纯图片请求 (即使我们推荐Base64)")
+        detail = retry_request(UserInteractive.getSongDetail, str(song_id), max_retries=2)
+        if detail and detail.get("songs"):
+            return RedirectResponse(url=detail["songs"][0]["al"]["picUrl"], status_code=302)
 
-    # --- 优先级 3: 文本/通用下载器 (VRCStringDownloader) ---
-    # 特征: 既不是视频，Accept 也不含 image (通常是 */* 或 application/json)
-    print(f"📝 [判决] -> 歌词文本 (VRCStringDownloader/Default)")
+    # === C. 文本请求 (VRCStringDownloader) - 核心修改 ===
+    print(f"📦 [判决] 文本+Base64封面 打包请求 (ID: {song_id})")
     
-    # 获取歌词
+    # 1. 获取歌曲详情 (为了封面URL和歌名)
+    song_name = "未知歌曲"
+    artist_name = ""
+    cover_url = ""
+    
+    try:
+        detail = retry_request(UserInteractive.getSongDetail, str(song_id), max_retries=2)
+        if detail and detail.get("songs"):
+            song = detail["songs"][0]
+            song_name = song["name"]
+            artist_name = song["ar"][0]["name"] if song["ar"] else ""
+            cover_url = song["al"]["picUrl"]
+    except Exception as e:
+        print(f"⚠️ 详情获取失败: {e}")
+
+    # 2. 获取歌词 (允许超时，不阻塞)
+    lrc_text = ""
     try:
         lyric_url = f"https://lyrics.0061226.xyz/api/lyric?id={song_id}"
-        # 使用 requests 发起内部请求
-        lyric_resp = requests.get(lyric_url, timeout=5)
-        lyric_json = lyric_resp.json()
-        
-        lrc = ""
-        if lyric_json.get("code") == 200:
-            lrc = lyric_json.get("data", {}).get("lyrics", {}).get("lrc", {}).get("lyric", "")
-        
-        # 返回 JSON 供 Udon 解析
-        response_data = {
-            "songName": song_name,
-            "lyric": lrc or "暂无歌词"
-        }
-        return create_json_response(response_data)
-        
+        # 设置短超时
+        lyric_resp = requests.get(lyric_url, timeout=2)
+        lyric_data = lyric_resp.json()
+        if lyric_data.get("code") == 200:
+            lrc_text = lyric_data.get("data", {}).get("lyrics", {}).get("lrc", {}).get("lyric", "")
     except Exception as e:
-        print(f"❌ 歌词获取出错: {e}")
-        # 出错时返回一个包含错误信息的 JSON，而不是直接 500，这样 Udon 还能显示点东西
-        return create_json_response({
-            "songName": song_name,
-            "lyric": "歌词获取超时或失败"
-        })
+        print(f"⚠️ 歌词获取失败: {e}")
+        lrc_text = "[歌词获取超时]"
 
+    if not lrc_text:
+        lrc_text = "[暂无歌词]"
+
+    # 3. 🔥 下载图片并转 Base64 🔥
+    cover_base64 = ""
+    if cover_url:
+        try:
+            print(f"📥 正在下载并转换封面: {cover_url[:30]}...")
+            # 下载图片 (设置超时)
+            img_resp = requests.get(cover_url, timeout=3)
+            if img_resp.status_code == 200:
+                # 转 Base64
+                b64_bytes = base64.b64encode(img_resp.content)
+                cover_base64 = b64_bytes.decode('utf-8')
+                print(f"✅ 封面转换成功 (大小: {len(cover_base64)} 字符)")
+            else:
+                print(f"❌ 封面下载失败: {img_resp.status_code}")
+        except Exception as e:
+            print(f"❌ 封面处理出错: {e}")
+
+    # 4. 返回大礼包 JSON
+    return create_json_response({
+        "songName": song_name,
+        "artist": artist_name,
+        "lyric": lrc_text,
+        "cover_base64": cover_base64  # 这里是关键
+    })
 
 @router.get("/lyric")
 async def get_lyric(id: int):
