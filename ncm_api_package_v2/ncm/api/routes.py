@@ -392,9 +392,49 @@ async def resolve_song(
     return create_json_response(result, status_code)
 
 @router.get("/song/detail")
-async def get_song_detail(ids: str):
-    """获取歌曲详情 (包含封面等信息)"""
-    data = UserInteractive.getSongDetail(ids)
+async def get_song_detail(
+    id: str,
+    level: str = "standard",
+    unblock: bool = False
+):
+    """获取歌曲详情 (包含封面等信息和播放链接)"""
+    # 获取歌曲详情
+    data = UserInteractive.getSongDetail(id)
+    
+    # 如果获取详情成功，尝试获取播放链接
+    if data and data.get("code") == 200 and data.get("songs"):
+        try:
+            # 确保 id 是整数
+            song_id = int(id)
+            
+            # 获取播放链接
+            cookie = load_cookie()
+            url_result = UserInteractive.getDownloadUrl(song_id, level, unblock, cookie)
+            
+            # 将播放链接信息添加到每首歌曲的数据中
+            for song in data.get("songs", []):
+                if url_result["success"] and url_result.get("url"):
+                    song["playUrl"] = url_result["url"]
+                    song["playLevel"] = level
+                    song["playSuccess"] = True
+                else:
+                    song["playUrl"] = None
+                    song["playLevel"] = level
+                    song["playSuccess"] = False
+                    song["playError"] = url_result.get("error", "无法获取播放链接")
+        except (ValueError, TypeError):
+            # ID格式错误时，不添加播放链接信息
+            for song in data.get("songs", []):
+                song["playUrl"] = None
+                song["playSuccess"] = False
+                song["playError"] = "无效的歌曲 ID"
+        except Exception as e:
+            # 获取播放链接失败时，不影响歌曲详情的返回
+            for song in data.get("songs", []):
+                song["playUrl"] = None
+                song["playSuccess"] = False
+                song["playError"] = f"获取播放链接失败: {str(e)}"
+    
     return create_json_response(data)
 
 @router.get("/playlist/detail")
