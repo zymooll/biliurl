@@ -288,6 +288,18 @@
                         <input type="text" id="apiUrl" readonly class="api-input" value="Waiting for playback...">
                         <button onclick="copyApiUrl()" class="btn-copy">Copy</button>
                     </div>
+                    
+                    <!-- User Quick URL (only shown when user is bound) -->
+                    <div id="userUrlSection" style="display: none; margin-top: 12px;">
+                        <label style="font-size: 0.8rem; font-weight: 600; color: var(--blue);">User Quick URL</label>
+                        <div class="api-url-group">
+                            <input type="text" id="userUrl" readonly class="api-input" value="">
+                            <button onclick="copyUserUrl()" class="btn-copy">Copy</button>
+                        </div>
+                        <p style="margin-top: 6px; font-size: 0.75rem; color: var(--text-secondary);">
+                            💡 使用此链接可直接播放您上次绑定的歌曲
+                        </p>
+                    </div>
                 </div>
             </div>
         </div>

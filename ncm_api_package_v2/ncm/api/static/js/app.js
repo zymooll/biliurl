@@ -67,6 +67,7 @@ function saveUser() {
     setCookie('ncm_user', username);
     document.getElementById('currentUserName').textContent = username;
     document.getElementById('currentUserDisplay').style.display = 'block';
+    updateUserQuickUrl();
     showStatusToast('用户绑定成功', 'success');
 }
 
@@ -74,6 +75,7 @@ function clearUser() {
     setCookie('ncm_user', '', -1);
     document.getElementById('userInput').value = '';
     document.getElementById('currentUserDisplay').style.display = 'none';
+    updateUserQuickUrl();
     showStatusToast('用户已清除', 'success');
 }
 
@@ -390,6 +392,9 @@ async function playSong(id, name, artist) {
     
     document.getElementById('apiUrl').value = fullApiUrl;
     
+    // Update user quick URL if user is bound
+    updateUserQuickUrl();
+    
     videoPlayerDiv.style.display = 'block';
     
     // 显示进度提示
@@ -433,6 +438,45 @@ function copyApiUrl() {
         btn.style.background = '';
         btn.style.color = '';
     }, 2000);
+}
+
+function copyUserUrl() {
+    const userUrlInput = document.getElementById('userUrl');
+    userUrlInput.select();
+    document.execCommand('copy');
+    
+    const btn = event.currentTarget || event.target;
+    const originalText = btn.textContent;
+    btn.textContent = 'Copied!';
+    btn.style.background = '#0070f3';
+    btn.style.color = '#fff';
+    
+    setTimeout(() => {
+        btn.textContent = originalText;
+        btn.style.background = '';
+        btn.style.color = '';
+    }, 2000);
+}
+
+function updateUserQuickUrl() {
+    const user = getUser();
+    const userUrlSection = document.getElementById('userUrlSection');
+    const userUrlInput = document.getElementById('userUrl');
+    
+    if (user) {
+        const accessHash = localStorage.getItem('access_hash') || getCookie('access_password');
+        const params = new URLSearchParams();
+        params.append('user', user);
+        if (accessHash) {
+            params.append('access_hash', accessHash);
+        }
+        
+        const userUrl = window.location.origin + `/video?${params.toString()}`;
+        userUrlInput.value = userUrl;
+        userUrlSection.style.display = 'block';
+    } else {
+        userUrlSection.style.display = 'none';
+    }
 }
 
 // ============ Floating Video Functions ============
@@ -1034,6 +1078,7 @@ window.onload = function() {
     initFloatingVideoDrag();
     initStatusToastDrag();
     initUserPanelClickOutside();
+    updateUserQuickUrl();
     
     // Load and display user on page load
     const user = getUser();
