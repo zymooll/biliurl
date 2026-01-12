@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException, Query, Response, BackgroundTasks, Cookie, Header, Form
-from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, HTMLResponse, StreamingResponse
+from fastapi import APIRouter, HTTPException, Query, Response, BackgroundTasks, Cookie, Header, Form, Request
+from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, HTMLResponse, StreamingResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 import requests
 import os
@@ -850,6 +850,187 @@ async def stream_audio_proxy(
     except Exception as e:
         print(f"❌ [Stream Proxy] 未知错误: {e}")
         raise HTTPException(status_code=500, detail=f"代理错误: {str(e)}")
+
+@router.get("/play/vrc")
+async def play_vrc_polymorphic(
+    request: Request,
+    id: str = None,
+    keywords: str = None,
+    level: str = "standard",
+    unblock: bool = False
+):
+    """
+    VRChat 多态链接 API - 根据请求头返回不同内容
+    
+    同一个URL，根据HTTP请求头特征分别返回：
+    1. 图片下载器 -> 重定向到封面图片
+    2. 视频播放器 -> 重定向到MP3直链
+    3. 文本下载器 -> 返回歌词文本或JSON数据
+    
+    参数:
+        id: 歌曲ID
+        keywords: 搜索关键词（如果没有提供id）
+        level: 音质等级 (standard/higher/exhigh/lossless)
+        unblock: 是否开启解灰模式
+    
+    使用方式:
+        https://ncm.206601.xyz/play/vrc?id=2048604694
+        
+    VRChat中使用同一个URL:
+        - VRCImageDownloader -> 获取封面图片
+        - AVPro/ProTV -> 播放MP3音频
+        - VRCStringDownloader -> 获取歌词数据
+    """
+    if not id and not keywords:
+        raise HTTPException(status_code=400, detail="必须提供 id 或 keywords 参数")
+
+    song_id = id
+
+    # 如果提供了 keywords，进行搜索
+    if keywords and (not song_id or not song_id.isdigit()):
+        print(f"🔍 [VRC多态] 收到搜索请求: {keywords}")
+        search_result = UserInteractive.searchSong(keywords, limit=1)
+        
+        if not search_result or search_result.get("code") != 200:
+            raise HTTPException(status_code=404, detail="搜索失败")
+            
+        songs = search_result.get("result", {}).get("songs", [])
+        if not songs:
+            raise HTTPException(status_code=404, detail="未找到相关歌曲")
+            
+        first_song = songs[0]
+        song_id = first_song.get("id")
+        song_name = first_song.get("name")
+        artist_name = first_song.get("ar", [{}])[0].get("name", "未知歌手")
+        print(f"✅ [VRC多态] 搜索匹配: {song_name} - {artist_name} (ID: {song_id})")
+    
+    # 确保 song_id 是整数
+    try:
+        song_id = int(song_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="无效的歌曲 ID")
+
+    # 获取请求头信息
+    user_agent = request.headers.get("user-agent", "").lower()
+    accept = request.headers.get("accept", "").lower()
+    range_header = request.headers.get("range")
+    
+    print(f"🔍 [VRC多态] 请求分析: ID={song_id}")
+    print(f"   User-Agent: {user_agent[:100]}")
+    print(f"   Accept: {accept}")
+    print(f"   Range: {range_header}")
+    
+    # 获取歌曲基础数据（歌曲详情、音频链接、歌词）
+    try:
+        # 1. 获取歌曲详情（封面）
+        song_detail = retry_request(
+            UserInteractive.getSongDetail,
+            str(song_id),
+            max_retries=2
+        )
+        if song_detail.get("code") != 200 or not song_detail.get("songs"):
+            raise HTTPException(status_code=404, detail="无法获取歌曲详情")
+        
+        song_info = song_detail["songs"][0]
+        cover_url = song_info.get("al", {}).get("picUrl")
+        song_name = song_info.get("name", "未知歌曲")
+        artist_name = song_info.get("ar", [{}])[0].get("name", "未知歌手")
+        
+        # 2. 获取音频链接
+        cookie = load_cookie()
+        audio_result = retry_request(
+            UserInteractive.getDownloadUrl,
+            song_id, level, unblock, cookie,
+            max_retries=2
+        )
+        
+        mp3_url = audio_result.get("url") if audio_result.get("success") else None
+        
+        # --- 🎯 多态分流逻辑 ---
+        
+        # A. 图片请求 (VRCImageDownloader)
+        # 识别特征：Accept 头明确包含 image/
+        if "image/" in accept:
+            print(f"🖼️ [VRC多态] 检测到图片请求，重定向到封面")
+            if not cover_url:
+                raise HTTPException(status_code=404, detail="无法获取封面图片")
+            return RedirectResponse(url=cover_url, status_code=302)
+        
+        # B. 视频/音频播放器请求 (AVPro / ProTV)
+        # 识别特征：User-Agent 包含 avpro/unity/player 或者有 Range 请求头
+        is_player_request = (
+            "avpro" in user_agent or 
+            "unity" in user_agent or 
+            "player" in user_agent or
+            range_header is not None or
+            "video/" in accept or
+            "*/*" in accept
+        )
+        
+        if is_player_request and not ("text/" in accept or "application/json" in accept):
+            print(f"🎵 [VRC多态] 检测到播放器请求，重定向到MP3")
+            if not mp3_url:
+                raise HTTPException(status_code=404, detail="无法获取音频链接")
+            return RedirectResponse(url=mp3_url, status_code=302)
+        
+        # C. 文本/歌词请求 (VRCStringDownloader 或默认情况)
+        # 返回歌词数据或JSON格式信息
+        print(f"📝 [VRC多态] 检测到文本请求，返回歌词数据")
+        
+        # 3. 获取歌词
+        lyric_data = None
+        try:
+            lyric_url = f"https://lyrics.0061226.xyz/api/lyric?id={song_id}"
+            lyric_response = retry_request(
+                requests.get,
+                lyric_url,
+                max_retries=2,
+                timeout=5
+            )
+            lyric_data = lyric_response.json()
+        except Exception as e:
+            print(f"⚠️ [VRC多态] 获取歌词失败: {e}")
+        
+        # 解析歌词内容
+        lrc_content = ""
+        if (lyric_data and 
+            lyric_data.get("code") == 200 and 
+            lyric_data.get("data", {}).get("lyrics", {}).get("lrc", {}).get("lyric")):
+            lrc_content = lyric_data["data"]["lyrics"]["lrc"]["lyric"]
+        
+        # 根据Accept头决定返回格式
+        if "application/json" in accept:
+            # 返回JSON格式
+            response_data = {
+                "code": 200,
+                "success": True,
+                "song_id": song_id,
+                "song_name": song_name,
+                "artist": artist_name,
+                "lyric": lrc_content,
+                "cover_url": cover_url,
+                "mp3_url": mp3_url,
+                "level": level
+            }
+            return create_json_response(response_data)
+        else:
+            # 返回纯文本歌词 (VRCStringDownloader 更容易处理)
+            if lrc_content:
+                return PlainTextResponse(
+                    content=lrc_content,
+                    media_type="text/plain; charset=utf-8"
+                )
+            else:
+                return PlainTextResponse(
+                    content=f"{song_name} - {artist_name}\n[00:00.00]暂无歌词",
+                    media_type="text/plain; charset=utf-8"
+                )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ [VRC多态] 处理失败: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=500, detail=f"处理请求失败: {str(e)}")
 
 @router.get("/lyric")
 async def get_lyric(id: int):
