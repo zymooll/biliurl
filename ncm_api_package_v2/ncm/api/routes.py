@@ -933,6 +933,7 @@ def play_vrc_main(
 # ============================
 # 接口 2: 静态图片代理 (无参数!)
 # ============================
+
 @router.get("/play/vrc/cover")
 def play_vrc_cover_proxy(request: Request):
     """
@@ -943,22 +944,43 @@ def play_vrc_cover_proxy(request: Request):
     song_id = get_song_id_by_ip(request)
     
     if not song_id:
-        print(f"⚠️ [图片] IP {request.client.host} 未找到播放记录，返回默认图")
-        # 可以返回一张 404 默认封面
+        print(f"⚠️ [图片] IP {request.client.host} 未找到播放记录，返回404")
         return Response(content=b"", status_code=404)
 
     print(f"🖼️ [图片] IP {request.client.host} -> 命中缓存 ID {song_id}")
 
-    # 2. 获取封面 URL
-    # ... 调用网易云接口获取 cover_url ...
-    # 假设拿到了 cover_url
+    # 2. 🔥 [补全逻辑] 获取封面 URL 🔥
+    cover_url = ""
+    try:
+        # 调用网易云接口获取歌曲详情
+        # retry_request 是你在文件前面定义的那个函数
+        detail = retry_request(UserInteractive.getSongDetail, str(song_id), max_retries=2)
+        
+        if detail and detail.get("code") == 200 and detail.get("songs"):
+            cover_url = detail["songs"][0]["al"]["picUrl"]
+            print(f"✅ 获取到封面链接: {cover_url[:30]}...")
+        else:
+            print(f"❌ 获取详情失败或无歌曲信息: {detail}")
+            return Response(status_code=404)
+            
+    except Exception as e:
+        print(f"❌ 获取封面信息出错: {e}")
+        return Response(status_code=500)
     
     # 3. 代理下载并返回二进制
     try:
+        if not cover_url:
+            return Response(status_code=404)
+            
+        # 下载图片 (5秒超时)
         img_resp = requests.get(cover_url, timeout=5)
-        return Response(content=img_resp.content, media_type="image/jpeg")
+        
+        # 获取正确的 Content-Type (如 image/jpeg, image/png)
+        content_type = img_resp.headers.get("content-type", "image/jpeg")
+        
+        return Response(content=img_resp.content, media_type=content_type)
     except Exception as e:
-        print(f"❌ 图片下载失败: {e}")
+        print(f"❌ 图片下载/转发失败: {e}")
         return Response(status_code=500)
 
 
