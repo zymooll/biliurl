@@ -260,7 +260,7 @@ def fetch_lyrics_with_retry(song_id, max_retries=3, timeout=15):
         timeout: 超时时间 (默认15秒)
     
     返回:
-        tuple: (success, lyrics_text, error_message)
+        tuple: (success, lyrics_text, trans_lyrics_text, error_message)
     """
     # 1. 尝试从数据库缓存获取
     cached_data = db.get_lyrics(song_id)
@@ -269,9 +269,11 @@ def fetch_lyrics_with_retry(song_id, max_retries=3, timeout=15):
         if cached_data.get("code") == 200:
             lyrics_data = cached_data.get("data", {}).get("lyrics", {})
             lrc = lyrics_data.get("lrc", {})
+            tlyric = lyrics_data.get("tlyric", {})
+            trans_text = tlyric.get("lyric", "") if tlyric else ""
             if lrc and lrc.get("lyric"):
-                return True, lrc["lyric"], None
-        return True, "暂无歌词", None
+                return True, lrc["lyric"], trans_text, None
+        return True, "暂无歌词", "", None
     
     # 2. 缓存未命中，从API获取
     last_error = None
@@ -294,13 +296,15 @@ def fetch_lyrics_with_retry(song_id, max_retries=3, timeout=15):
                 
                 lyrics_data = data.get("data", {}).get("lyrics", {})
                 lrc = lyrics_data.get("lrc", {})
+                tlyric = lyrics_data.get("tlyric", {})
+                trans_text = tlyric.get("lyric", "") if tlyric else ""
                 
                 if lrc and lrc.get("lyric"):
                     print(f"✅ [歌词] 成功获取并缓存歌词 ID:{song_id} (尝试 {attempt + 1}/{max_retries})")
-                    return True, lrc["lyric"], None
+                    return True, lrc["lyric"], trans_text, None
                 else:
                     print(f"⚠️ [歌词] 歌词内容为空 ID:{song_id}")
-                    return True, "暂无歌词", None
+                    return True, "暂无歌词", "", None
             else:
                 error_msg = f"API返回错误: code={data.get('code')}, msg={data.get('message', '未知错误')}"
                 print(f"⚠️ [歌词] {error_msg} ID:{song_id}")
@@ -321,7 +325,7 @@ def fetch_lyrics_with_retry(song_id, max_retries=3, timeout=15):
     # 所有重试都失败了
     final_error = f"歌词请求失败 (重试{max_retries}次): {last_error}"
     print(f"❌ [歌词] {final_error} ID:{song_id}")
-    return False, final_error, last_error
+    return False, final_error, "", last_error
 
 def create_json_response(content, status_code=200):
     """创建 JSON 响应并移除 Content-Length 头，防止协议错误"""
@@ -1104,16 +1108,18 @@ async def play_vrc_main(
             artist_name = ", ".join([ar.get("name", "未知歌手") for ar in song.get("ar", [])])
     except: pass
 
-    success, lrc_text, error = fetch_lyrics_with_retry(target_id, max_retries=5, timeout=15)
+    success, lrc_text, trans_lrc_text, error = fetch_lyrics_with_retry(target_id, max_retries=5, timeout=15)
     
     if not success:
         lrc_text = f"[00:00.00] 歌词加载失败 ID:{target_id}"
+        trans_lrc_text = ""
     
     return JSONResponse(
         content={
             "songName": song_name,
             "artist": artist_name,
-            "lyric": lrc_text
+            "lyric": lrc_text,
+            "transLyric": trans_lrc_text
         },
         headers={
             "Access-Control-Allow-Origin": "*",
