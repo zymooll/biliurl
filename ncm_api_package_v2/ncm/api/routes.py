@@ -200,7 +200,7 @@ def retry_request(func, *args, max_retries=5, timeout=10, **kwargs):
 
 def fetch_lyrics_with_retry(song_id, max_retries=3, timeout=15):
     """
-    带重试机制的歌词获取函数
+    带重试机制的歌词获取函数 (支持数据库缓存)
     
     参数:
         song_id: 歌曲ID
@@ -210,6 +210,18 @@ def fetch_lyrics_with_retry(song_id, max_retries=3, timeout=15):
     返回:
         tuple: (success, lyrics_text, error_message)
     """
+    # 1. 尝试从数据库缓存获取
+    cached_data = db.get_lyrics(song_id)
+    if cached_data:
+        print(f"💾 [Cache] 命中歌词缓存 ID: {song_id}")
+        if cached_data.get("code") == 200:
+            lyrics_data = cached_data.get("data", {}).get("lyrics", {})
+            lrc = lyrics_data.get("lrc", {})
+            if lrc and lrc.get("lyric"):
+                return True, lrc["lyric"], None
+        return True, "暂无歌词", None
+    
+    # 2. 缓存未命中，从API获取
     last_error = None
     
     for attempt in range(max_retries):
@@ -225,11 +237,14 @@ def fetch_lyrics_with_retry(song_id, max_retries=3, timeout=15):
             data = resp.json()
             
             if data.get("code") == 200:
+                # 保存到数据库缓存
+                db.save_lyrics(song_id, data)
+                
                 lyrics_data = data.get("data", {}).get("lyrics", {})
                 lrc = lyrics_data.get("lrc", {})
                 
                 if lrc and lrc.get("lyric"):
-                    print(f"✅ [歌词] 成功获取歌词 ID:{song_id} (尝试 {attempt + 1}/{max_retries})")
+                    print(f"✅ [歌词] 成功获取并缓存歌词 ID:{song_id} (尝试 {attempt + 1}/{max_retries})")
                     return True, lrc["lyric"], None
                 else:
                     print(f"⚠️ [歌词] 歌词内容为空 ID:{song_id}")
