@@ -30,7 +30,11 @@ class UserInteractive:
                     params["source"] = "migu,qq"
                 
                 url = f"{API_BASE_URL}song/url/v1"
-                print(f"📡 正在请求: {current_level} (VIP={bool(current_cookie)}, Unblock={current_unblock})")
+                print(
+                    f"📡 [SongURL] 请求 | songID={songID} "
+                    f"level={current_level} unblock={current_unblock} "
+                    f"cookie={'yes' if current_cookie else 'no'}"
+                )
                 # 改用 POST 请求，防止 Cookie 过长导致 URL 超出限制 (HTTP 502)
                 resp = requests.post(url, data=params)
                 return resp.json()
@@ -82,6 +86,15 @@ class UserInteractive:
             if 'data' in data and isinstance(data['data'], list) and len(data['data']) > 0:
                 song_info = data['data'][0]
                 downloadUrl = song_info.get('url')
+
+                try:
+                    api_song_id = song_info.get('id')
+                    print(
+                        f"📊 [SongURL] API响应 | req_id={songID} api_id={api_song_id} "
+                        f"level={song_info.get('level')} url={str(downloadUrl)[:80]}"
+                    )
+                except Exception:
+                    pass
                 
                 # 检查是否为灰色歌曲（无URL或状态异常）
                 is_grey = False

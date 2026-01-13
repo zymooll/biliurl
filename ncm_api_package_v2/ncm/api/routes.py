@@ -944,9 +944,6 @@ def get_song_id_by_ip(request: Request):
         return session["id"]
     return None
 
-# ==========================================
-# 接口 1: VRChat 主入口 (处理音频 + 歌词)
-# ==========================================
 @router.get("/play/vrc")
 async def play_vrc_main(
     request: Request,
@@ -954,13 +951,23 @@ async def play_vrc_main(
     id: str = None,
     keywords: str = None,
     level: str = "standard",
-    unblock: bool = False
+    unblock: bool = False,
+    user: str = None  # 确保这个参数存在
 ):
-    # 1. 解析当前请求的目标 Song ID
+    # 1. 优先处理 ID 绑定逻辑 (修复之前的逻辑漏洞)
+    if user:
+        if id:
+            user_id_bindings[user] = id
+            print(f"💾 [用户绑定] 用户 '{user}' 绑定到 ID: {id}")
+        elif user in user_id_bindings and not id and not keywords:
+            # 只有当没提供 ID 也没提供关键词时，才使用绑定的 ID
+            id = user_id_bindings[user]
+            print(f"🔗 [用户绑定] 用户 '{user}' 使用绑定的 ID: {id}")
+
+    # 2. 解析目标 Song ID
     target_id = id 
     if keywords and (not target_id or not str(target_id).isdigit()):
         try:
-            # 搜索逻辑
             res = UserInteractive.searchSong(keywords, limit=1)
             songs = res.get("result", {}).get("songs", [])
             if songs: target_id = songs[0].get("id")
@@ -975,13 +982,10 @@ async def play_vrc_main(
     user_agent = headers.get("user-agent", "").lower()
     range_header = headers.get("range") 
 
-    # 判断是否为音频播放器发出的请求
-    # VRChat 播放器通常带 Range 头，或者特定的 UA
     is_player_request = range_header or any(ua in user_agent for ua in ["nsplayer", "wmfsdk", "lav", "altstream"])
 
     # ==========================================
     # 🎬 分支 A: 音频播放器请求 -> 直接重定向
-    # 核心：完全信任 URL 里的 target_id，不依赖 Session 缓存
     # ==========================================
     if is_player_request:
         cookie = load_cookie()
@@ -989,13 +993,17 @@ async def play_vrc_main(
         mp3_url = audio_res.get("url")
         
         if mp3_url:
-            print(f"🔊 [Player] 播放请求: ID={target_id} -> 重定向音频")
-            print(f"🎵 [Debug] 重定向目标: {mp3_url[:80]}...")
+            # 🛠️ 核心修复：添加随机参数防止 AVPro 缓存旧歌曲
+            import time
+            separator = "&" if "?" in mp3_url else "?"
+            # 添加 _t=时间戳，强制播放器认为这是一个新文件
+            final_url = f"{mp3_url}{separator}_t={int(time.time())}"
+            
+            print(f"🔊 [Player] 播放请求: ID={target_id} -> 重定向音频 (已加防缓存戳)")
             return RedirectResponse(
-                url=mp3_url, 
+                url=final_url, 
                 status_code=302,
                 headers={
-                    # 极其重要：禁止播放器缓存 302 重定向结果
                     "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
                     "Pragma": "no-cache"
                 }
@@ -1006,14 +1014,12 @@ async def play_vrc_main(
     # ==========================================
     # 📝 分支 B: Udon 脚本请求 -> 返回 JSON 歌词
     # ==========================================
-    # 只有脚本请求时，才更新 IP Session，供封面接口使用
     ip_session_cache[client_ip] = {
         "id": target_id,
         "time": time.time()
     }
     print(f"📝 [Udon] 脚本请求: ID={target_id} -> 更新 Session 并返回歌词")
 
-    # 获取歌名
     song_name = "未知歌曲"
     try:
         detail = UserInteractive.getSongDetail(str(target_id))
@@ -1021,10 +1027,8 @@ async def play_vrc_main(
             song_name = detail["songs"][0]["name"]
     except: pass
 
-    # 获取歌词 - 增加重试次数和超时时间
     success, lrc_text, error = fetch_lyrics_with_retry(target_id, max_retries=5, timeout=15)
     
-    # 如果歌词获取失败，提供更明显的失败提示
     if not success:
         lrc_text = f"[00:00.00] 歌词加载失败 ID:{target_id}"
     
@@ -1035,7 +1039,7 @@ async def play_vrc_main(
         },
         headers={
             "Access-Control-Allow-Origin": "*",
-            "Cache-Control": "public, max-age=86400"  # 缓存1天
+            "Cache-Control": "public, max-age=86400"
         }
     )
 
