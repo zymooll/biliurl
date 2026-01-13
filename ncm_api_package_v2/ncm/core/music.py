@@ -1,5 +1,6 @@
 import requests
 import urllib.parse
+import time
 from ncm.config import API_BASE_URL
 from ncm.utils.cookie import load_cookie, filter_cookie
 
@@ -13,6 +14,7 @@ class UserInteractive:
             if not cookie:
                 cookie = load_cookie()
             
+            # 内部函数：发起核心请求
             def fetch(current_level, current_unblock, current_cookie):
                 params = {
                     "id": songID,
@@ -20,7 +22,6 @@ class UserInteractive:
                     "unblock": "true" if current_unblock else "false",
                 }
                 if current_cookie:
-                    # 确保包含 os=pc 且格式正确
                     c_str = current_cookie
                     if "os=pc" not in c_str.lower():
                         c_str += "; os=pc"
@@ -29,103 +30,99 @@ class UserInteractive:
                 if current_unblock:
                     params["source"] = "migu,qq"
                 
-                url = f"{API_BASE_URL}song/url/v1"
+                # 🛠️ 修复点 1: 在请求上游 API 时强制添加毫秒级时间戳，防止网易云服务端缓存
+                ts = int(time.time() * 1000)
+                url = f"{API_BASE_URL}song/url/v1?timestamp={ts}"
+                
                 print(
                     f"📡 [SongURL] 请求 | songID={songID} "
                     f"level={current_level} unblock={current_unblock} "
-                    f"cookie={'yes' if current_cookie else 'no'}"
+                    f"ts={ts}"
                 )
-                # 改用 POST 请求，防止 Cookie 过长导致 URL 超出限制 (HTTP 502)
+                # 使用 POST 请求
                 resp = requests.post(url, data=params)
                 return resp.json()
             
             def try_grey_song_api(song_id):
                 """尝试使用灰色歌曲备用API获取音源"""
                 try:
-                    grey_api_url = f"{API_BASE_URL}song/url/match?id={song_id}"
-                    print(f"🔓 检测到灰色歌曲，尝试使用备用API: {grey_api_url}")
+                    # 备用 API 也加上时间戳
+                    ts = int(time.time() * 1000)
+                    grey_api_url = f"{API_BASE_URL}song/url/match?id={song_id}&timestamp={ts}"
+                    print(f"🔓 检测到灰色/ID不匹配，尝试使用备用API: {grey_api_url}")
                     resp = requests.get(grey_api_url, timeout=60)
                     data = resp.json()
                     
                     if data.get('code') == 200:
-                        # data字段可能是字符串URL或字典
                         url_data = data.get('data')
-                        
-                        # 如果data是字符串，直接作为URL使用
                         if isinstance(url_data, str) and url_data:
                             print(f"✅ 备用API成功获取音源: {url_data[:80]}...")
-                            return {
-                                "url": url_data,
-                                "level": "grey_unlocked",
-                                "source": "grey_api"
-                            }
-                        # 如果data是字典，尝试从中提取url
+                            return {"url": url_data, "level": "grey_unlocked", "source": "grey_api"}
                         elif isinstance(url_data, dict):
                             url = url_data.get('url')
                             if url:
                                 print(f"✅ 备用API成功获取音源: {url[:80]}...")
-                                return {
-                                    "url": url,
-                                    "level": url_data.get('type', 'grey_unlocked'),
-                                    "source": "grey_api"
-                                }
-                    
-                    print(f"⚠️ 备用API未返回有效音源，返回数据: {data}")
+                                return {"url": url, "level": url_data.get('type', 'grey_unlocked'), "source": "grey_api"}
                     return None
                 except Exception as e:
                     print(f"⚠️ 备用API请求失败: {e}")
                     return None
 
-            # 初始化变量，防止未赋值错误
             downloadUrl = None
             song_info = {}
 
             # 第一次尝试：使用当前设置
             data = fetch(level, unblock, cookie)
             
+            # 解析数据
             if 'data' in data and isinstance(data['data'], list) and len(data['data']) > 0:
                 song_info = data['data'][0]
                 downloadUrl = song_info.get('url')
+                api_song_id = song_info.get('id')
 
-                try:
-                    api_song_id = song_info.get('id')
+                # 🛠️ 修复点 2: 严格校验返回的 ID 是否与请求的 ID 一致
+                # 如果网易云发神经返回了上一首的 ID，直接视为无效，强制走重试流程
+                if str(api_song_id) != str(songID):
+                    print(f"⚠️ [严重错误] ID不匹配! 请求:{songID} 实际返回:{api_song_id} -> 判定为脏读，丢弃结果。")
+                    downloadUrl = None 
+                else:
                     print(
-                        f"📊 [SongURL] API响应 | req_id={songID} api_id={api_song_id} "
-                        f"level={song_info.get('level')} url={str(downloadUrl)[:80]}"
+                        f"📊 [SongURL] API响应正常 | req_id={songID} api_id={api_song_id} "
+                        f"url={str(downloadUrl)[:80]}"
                     )
-                except Exception:
-                    pass
-                
-                # 检查是否为灰色歌曲（无URL或状态异常）
+
+                # 检查是否为灰色歌曲或无效
                 is_grey = False
                 if not downloadUrl:
-                    print("⚠️ 未获取到下载链接，可能是灰色歌曲")
+                    print("⚠️ 未获取到下载链接，可能是灰色歌曲或脏读")
                     is_grey = True
-                # 检查是否为酷狗占位符
                 elif "1325645003.mp3" in downloadUrl:
-                    print("⚠️ 检测到 VIP 身份未生效或音源受限（返回了酷狗占位符）")
+                    print("⚠️ 检测到酷狗占位符，视为灰色")
                     is_grey = True
                 
-                # 如果是灰色歌曲，尝试解灰模式
+                # 如果是灰色歌曲或脏读，尝试解灰/备用逻辑
                 if is_grey:
-                    # 先尝试解灰模式
                     if not unblock:
                         print("🔄 正在尝试开启解灰模式重新获取...")
-                        data = fetch(level, True, None) # 开启解灰，且不带 Cookie 避免干扰
+                        data = fetch(level, True, None) 
                     else:
                         print("🔄 正在尝试强制切换咪咕音源...")
-                        # 强制咪咕
                         params_migu = {"id": songID, "level": "standard", "unblock": "true", "source": "migu"}
-                        data = requests.get(f"{API_BASE_URL}song/url/v1", params=params_migu).json()
+                        # 咪咕请求也加时间戳
+                        migu_url = f"{API_BASE_URL}song/url/v1?timestamp={int(time.time() * 1000)}"
+                        data = requests.get(migu_url, params=params_migu).json()
                     
-                    # 重新提取结果
+                    # 重新提取并校验
                     if 'data' in data and isinstance(data['data'], list) and len(data['data']) > 0:
                         song_info = data['data'][0]
                         downloadUrl = song_info.get('url')
+                        # 再次校验 ID
+                        if str(song_info.get('id')) != str(songID):
+                             downloadUrl = None
 
-            # 如果常规方式和解灰模式都失败，最后尝试备用API
+            # 如果常规方式失败，最后尝试备用API
             if not downloadUrl:
-                print("⚠️ 常规方式全部失败，尝试使用灰色歌曲备用API...")
+                print("⚠️ 常规方式失败(或ID不匹配)，尝试使用备用API...")
                 grey_result = try_grey_song_api(songID)
                 if grey_result and grey_result.get('url'):
                     return {
@@ -136,12 +133,11 @@ class UserInteractive:
                         "is_grey_unlocked": True
                     }
                 
-                print(f"❌ 所有方式均失败，无法获取歌曲 {songID} 的下载链接")
-                print(f"📊 最后的API响应数据: {data}")
+                print(f"❌ 所有方式均失败，无法获取歌曲 {songID}")
                 return {
                     "success": False, 
                     "data": data,
-                    "error": "所有获取方式均失败，包括备用灰色歌曲API"
+                    "error": "获取失败或ID不匹配"
                 }
             
             return {
@@ -159,31 +155,14 @@ class UserInteractive:
     def getUserAccount(cookie):
         """获取用户账号信息"""
         try:
-            if not cookie:
-                return None
-            
-            # 使用 POST 请求避免 URL 过长，同时保留完整 Cookie
-            url = f"{API_BASE_URL}user/account"
-            # 确保包含 os=pc
-            if "os=pc" not in cookie.lower():
-                cookie += "; os=pc"
-            
-            print(f"🔗 正在验证 Cookie: {url}")    
-            # 添加超时和更好的错误处理
+            if not cookie: return None
+            # 加上时间戳防缓存
+            url = f"{API_BASE_URL}user/account?timestamp={int(time.time() * 1000)}"
+            if "os=pc" not in cookie.lower(): cookie += "; os=pc"
             response = requests.post(url, data={"cookie": cookie}, timeout=15, verify=False)
-            
-            if response.status_code != 200:
-                print(f"⚠️ API 返回非 200 状态码: {response.status_code}")
-                return None
-                
-            data = response.json()
-            return data
-        except requests.exceptions.RequestException as e:
-            print(f"❌ 获取用户信息网络错误: {type(e).__name__}: {e}")
-            return None
-        except Exception as e:
-            print(f"❌ 获取用户信息失败: {type(e).__name__}: {e}")
-            return None
+            if response.status_code != 200: return None
+            return response.json()
+        except: return None
 
     @staticmethod
     def searchSong(keywords, limit=30, offset=0, type=1):
@@ -194,13 +173,12 @@ class UserInteractive:
                 "keywords": keywords,
                 "limit": limit,
                 "offset": offset,
-                "type": type
+                "type": type,
+                "timestamp": int(time.time() * 1000) # 加时间戳
             }
             response = requests.get(url, params=params)
-            data = response.json()
-            return data
+            return response.json()
         except Exception as e:
-            print(f"❌ 搜索失败: {e}")
             return {"code": 500, "message": str(e)}
 
     @staticmethod
@@ -209,147 +187,64 @@ class UserInteractive:
         try:
             url = f"{API_BASE_URL}song/detail"
             params = {
-                "ids": ids
+                "ids": ids,
+                "timestamp": int(time.time() * 1000) # 加时间戳
             }
             response = requests.get(url, params=params)
-            data = response.json()
-            return data
+            return response.json()
         except Exception as e:
-            print(f"❌ 获取歌曲详情失败: {e}")
             return {"code": 500, "message": str(e)}
     
     @staticmethod
     def getPlaylistDetail(playlist_id, cookie=None):
-        """
-        获取歌单详情
-        
-        参数:
-            playlist_id: 歌单ID
-            cookie: 用户cookie（可选，登录后可获取完整歌单）
-        
-        返回:
-            包含歌单信息的字典，其中：
-            - playlist.trackIds: 完整的歌曲ID列表
-            - playlist.tracks: 部分歌曲详情（未登录状态可能不完整）
-        """
         try:
-            if not cookie:
-                cookie = load_cookie()
-            
+            if not cookie: cookie = load_cookie()
             url = f"{API_BASE_URL}playlist/detail"
-            params = {"id": playlist_id}
-            
-            if cookie:
-                params["cookie"] = cookie
-            
-            print(f"📡 正在获取歌单详情: ID={playlist_id}")
+            params = {"id": playlist_id, "timestamp": int(time.time() * 1000)}
+            if cookie: params["cookie"] = cookie
             response = requests.get(url, params=params, timeout=30)
-            data = response.json()
-            
-            if data.get('code') == 200:
-                playlist = data.get('playlist', {})
-                track_count = playlist.get('trackCount', 0)
-                track_ids_count = len(playlist.get('trackIds', []))
-                print(f"✅ 歌单获取成功: {playlist.get('name', '未知')} (共{track_count}首，trackIds: {track_ids_count})")
-            
-            return data
+            return response.json()
         except Exception as e:
-            print(f"❌ 获取歌单详情失败: {e}")
             return {"code": 500, "message": str(e)}
     
     @staticmethod
     def getPlaylistTracks(playlist_id, cookie=None):
-        """
-        获取歌单的所有歌曲详情（完整版本）
-        
-        先调用 playlist/detail 获取所有trackIds，
-        然后批量调用 song/detail 获取完整歌曲信息
-        
-        参数:
-            playlist_id: 歌单ID
-            cookie: 用户cookie（可选）
-        
-        返回:
-            {
-                "code": 200,
-                "playlist_info": {...},  # 歌单基本信息
-                "songs": [...],          # 完整的歌曲列表
-                "total": 10              # 歌曲总数
-            }
-        """
         try:
-            # 1. 获取歌单详情
+            # 复用 getPlaylistDetail
             playlist_data = UserInteractive.getPlaylistDetail(playlist_id, cookie)
-            
-            if playlist_data.get('code') != 200:
-                return playlist_data
+            if playlist_data.get('code') != 200: return playlist_data
             
             playlist = playlist_data.get('playlist', {})
             track_ids = [item.get('id') for item in playlist.get('trackIds', [])]
             
             if not track_ids:
-                return {
-                    "code": 200,
-                    "playlist_info": {
-                        "id": playlist.get('id'),
-                        "name": playlist.get('name'),
-                        "creator": playlist.get('creator', {}).get('nickname'),
-                        "coverImgUrl": playlist.get('coverImgUrl'),
-                        "playCount": playlist.get('playCount'),
-                        "trackCount": playlist.get('trackCount'),
-                    },
-                    "songs": [],
-                    "total": 0
-                }
+                return {"code": 200, "songs": [], "total": 0}
             
-            # 2. 批量获取歌曲详情（一次最多获取1000首）
-            print(f"📋 准备批量获取 {len(track_ids)} 首歌曲的详细信息...")
-            
-            # 将ID列表分批处理（每批最多1000个）
+            # 批量获取详情
             batch_size = 1000
             all_songs = []
-            
             for i in range(0, len(track_ids), batch_size):
                 batch_ids = track_ids[i:i+batch_size]
                 ids_str = ','.join(map(str, batch_ids))
-                
                 url = f"{API_BASE_URL}song/detail"
-                params = {"ids": ids_str}
+                params = {"ids": ids_str, "timestamp": int(time.time() * 1000)}
+                if cookie: params["cookie"] = cookie
                 
-                if cookie:
-                    params["cookie"] = cookie
-                
-                print(f"🔄 正在获取第 {i//batch_size + 1} 批歌曲 ({len(batch_ids)} 首)...")
-                response = requests.get(url, params=params, timeout=30)
-                batch_data = response.json()
-                
+                resp = requests.get(url, params=params, timeout=30)
+                batch_data = resp.json()
                 if batch_data.get('code') == 200:
-                    songs = batch_data.get('songs', [])
-                    all_songs.extend(songs)
-                    print(f"✅ 第 {i//batch_size + 1} 批获取成功: {len(songs)} 首")
-                else:
-                    print(f"⚠️ 第 {i//batch_size + 1} 批获取失败")
+                    all_songs.extend(batch_data.get('songs', []))
             
-            # 3. 返回完整数据
-            result = {
+            return {
                 "code": 200,
                 "playlist_info": {
                     "id": playlist.get('id'),
                     "name": playlist.get('name'),
-                    "creator": playlist.get('creator', {}).get('nickname'),
                     "coverImgUrl": playlist.get('coverImgUrl'),
-                    "playCount": playlist.get('playCount'),
                     "trackCount": playlist.get('trackCount'),
-                    "description": playlist.get('description'),
                 },
                 "songs": all_songs,
                 "total": len(all_songs)
             }
-            
-            print(f"✅ 歌单处理完成: {result['playlist_info']['name']} (共{result['total']}首)")
-            return result
-            
         except Exception as e:
-            print(f"❌ 获取歌单歌曲失败: {e}")
             return {"code": 500, "message": str(e)}
-
