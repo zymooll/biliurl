@@ -944,6 +944,9 @@ def get_song_id_by_ip(request: Request):
         return session["id"]
     return None
 
+# ==========================================
+# 接口 1: VRChat 主入口 (处理音频 + 歌词)
+# ==========================================
 @router.get("/play/vrc")
 async def play_vrc_main(
     request: Request,
@@ -952,15 +955,14 @@ async def play_vrc_main(
     keywords: str = None,
     level: str = "standard",
     unblock: bool = False,
-    user: str = None  # 确保这个参数存在
+    user: str = None
 ):
-    # 1. 优先处理 ID 绑定逻辑 (修复之前的逻辑漏洞)
+    # 1. 优先处理 ID 绑定逻辑
     if user:
         if id:
             user_id_bindings[user] = id
             print(f"💾 [用户绑定] 用户 '{user}' 绑定到 ID: {id}")
         elif user in user_id_bindings and not id and not keywords:
-            # 只有当没提供 ID 也没提供关键词时，才使用绑定的 ID
             id = user_id_bindings[user]
             print(f"🔗 [用户绑定] 用户 '{user}' 使用绑定的 ID: {id}")
 
@@ -993,8 +995,7 @@ async def play_vrc_main(
         mp3_url = audio_res.get("url")
         
         if mp3_url:
-            # 🛠️ 核心修复：添加随机参数防止 AVPro 缓存旧歌曲
-            import time
+            # 🛠️ 修复：删除了这里的 import time，直接使用全局的 time 模块
             separator = "&" if "?" in mp3_url else "?"
             # 添加 _t=时间戳，强制播放器认为这是一个新文件
             final_url = f"{mp3_url}{separator}_t={int(time.time())}"
@@ -1014,6 +1015,8 @@ async def play_vrc_main(
     # ==========================================
     # 📝 分支 B: Udon 脚本请求 -> 返回 JSON 歌词
     # ==========================================
+    # 记录 IP 和 ID 的对应关系，供封面接口使用
+    # 这里直接使用全局的 time 模块，不会再报错了
     ip_session_cache[client_ip] = {
         "id": target_id,
         "time": time.time()
