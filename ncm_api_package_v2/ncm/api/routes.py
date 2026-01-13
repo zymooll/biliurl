@@ -990,6 +990,7 @@ async def play_vrc_main(
         
         if mp3_url:
             print(f"🔊 [Player] 播放请求: ID={target_id} -> 重定向音频")
+            print(f"🎵 [Debug] 重定向目标: {mp3_url[:80]}...")
             return RedirectResponse(
                 url=mp3_url, 
                 status_code=302,
@@ -999,6 +1000,7 @@ async def play_vrc_main(
                     "Pragma": "no-cache"
                 }
             )
+        print(f"❌ [Player] 音频获取失败: ID={target_id}")
         raise HTTPException(404, "Audio URL Not Found")
 
     # ==========================================
@@ -1019,17 +1021,21 @@ async def play_vrc_main(
             song_name = detail["songs"][0]["name"]
     except: pass
 
-    # 获取歌词
-    success, lrc_text, error = fetch_lyrics_with_retry(target_id, max_retries=2, timeout=5)
+    # 获取歌词 - 增加重试次数和超时时间
+    success, lrc_text, error = fetch_lyrics_with_retry(target_id, max_retries=5, timeout=15)
+    
+    # 如果歌词获取失败，提供更明显的失败提示
+    if not success:
+        lrc_text = f"[00:00.00] 歌词加载失败 ID:{target_id}"
     
     return JSONResponse(
         content={
             "songName": song_name,
-            "lyric": lrc_text if success else "[00:00.00] 歌词加载中..."
+            "lyric": lrc_text
         },
         headers={
             "Access-Control-Allow-Origin": "*",
-            "Cache-Control": "no-store" # 禁止缓存 JSON
+            "Cache-Control": "public, max-age=86400"  # 缓存1天
         }
     )
 
