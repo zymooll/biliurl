@@ -198,6 +198,58 @@ def retry_request(func, *args, max_retries=5, timeout=10, **kwargs):
             # 其他异常直接抛出，不重试
             raise e
 
+def extract_song_id_from_url(url_or_id: str) -> str:
+    """
+    从网易云音乐链接或纯ID中提取歌曲ID
+    
+    支持的格式：
+    - 纯数字ID: "483242395"
+    - 完整URL: "https://music.163.com/song?id=483242395&userid=1646867891"
+    - 简化URL: "music.163.com/song?id=483242395"
+    - 移动端URL: "https://music.163.com/#/song?id=483242395"
+    
+    参数:
+        url_or_id: URL字符串或纯ID
+    
+    返回:
+        提取的歌曲ID字符串，如果无法提取则返回原值
+    """
+    import re
+    from urllib.parse import urlparse, parse_qs
+    
+    # 如果已经是纯数字ID，直接返回
+    if url_or_id.isdigit():
+        return url_or_id
+    
+    try:
+        # 方法1: 使用正则表达式匹配 id=数字
+        match = re.search(r'[?&]id=(\d+)', url_or_id)
+        if match:
+            song_id = match.group(1)
+            print(f"🔗 [URL解析] 从URL提取ID: {url_or_id} -> {song_id}")
+            return song_id
+        
+        # 方法2: 使用 urlparse 解析
+        if '://' in url_or_id or url_or_id.startswith('music.163.com'):
+            if not url_or_id.startswith('http'):
+                url_or_id = 'https://' + url_or_id
+            
+            # 移除 # 标记（移动端URL可能有）
+            url_or_id = url_or_id.replace('/#/', '/')
+            
+            parsed = urlparse(url_or_id)
+            params = parse_qs(parsed.query)
+            
+            if 'id' in params and params['id']:
+                song_id = params['id'][0]
+                print(f"🔗 [URL解析] 从URL提取ID: {url_or_id} -> {song_id}")
+                return song_id
+    except Exception as e:
+        print(f"⚠️ [URL解析] 解析失败: {e}, 返回原值")
+    
+    # 无法提取，返回原值
+    return url_or_id
+
 def fetch_lyrics_with_retry(song_id, max_retries=3, timeout=15):
     """
     带重试机制的歌词获取函数 (支持数据库缓存)
@@ -972,6 +1024,10 @@ async def play_vrc_main(
     unblock: bool = False,
     user: str = None
 ):
+    # 0. 如果 id 参数是URL，先提取出真实ID
+    if id:
+        id = extract_song_id_from_url(id)
+    
     # 1. 优先处理 ID 绑定逻辑
     if user:
         if id:
