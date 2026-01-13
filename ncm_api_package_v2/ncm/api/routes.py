@@ -1024,10 +1024,13 @@ async def play_vrc_main(
     print(f"📝 [Udon] 脚本请求: ID={target_id} -> 更新 Session 并返回歌词")
 
     song_name = "未知歌曲"
+    artist_name = "未知歌手"
     try:
         detail = UserInteractive.getSongDetail(str(target_id))
         if detail and detail.get("songs"):
-            song_name = detail["songs"][0]["name"]
+            song = detail["songs"][0]
+            song_name = song.get("name", "未知歌曲")
+            artist_name = ", ".join([ar.get("name", "未知歌手") for ar in song.get("ar", [])])
     except: pass
 
     success, lrc_text, error = fetch_lyrics_with_retry(target_id, max_retries=5, timeout=15)
@@ -1038,6 +1041,7 @@ async def play_vrc_main(
     return JSONResponse(
         content={
             "songName": song_name,
+            "artist": artist_name,
             "lyric": lrc_text
         },
         headers={
@@ -1077,37 +1081,7 @@ def play_vrc_cover_proxy(request: Request):
     except Exception as e:
         print(f"❌ [Cover] 获取失败: {e}")
         return Response(status_code=500)
-# ==========================================
-# 接口 2: 静态图片代理 (通过 IP 识别 ID)
-# ==========================================
-@router.get("/play/vrc/cover")
-def play_vrc_cover_proxy(request: Request):
-    """通过 IP 查找刚才 Udon 脚本注册的 ID，返回封面"""
-    song_id = get_song_id_by_ip(request)
-    
-    if not song_id:
-        print(f"🖼️ [Cover] Session 未命中, IP: {get_real_ip(request)}")
-        return Response(status_code=404)
 
-    try:
-        detail = UserInteractive.getSongDetail(str(song_id))
-        if not (detail and detail.get("songs")):
-            return Response(status_code=404)
-            
-        cover_url = detail["songs"][0]["al"]["picUrl"]
-        if cover_url:
-            if "?" in cover_url: cover_url = cover_url.split("?")[0]
-            cover_url += "?param=512y512" # 强制缩小提升加载速度
-            
-        img_resp = requests.get(cover_url, timeout=10)
-        return Response(
-            content=img_resp.content, 
-            media_type=img_resp.headers.get("content-type", "image/jpeg"),
-            headers={"Cache-Control": "no-cache, no-store"}
-        )
-    except Exception as e:
-        print(f"❌ [Cover] 获取失败: {e}")
-        return Response(status_code=500)
 # ============================
 # 调试接口：查看当前缓存
 # ============================
