@@ -25,7 +25,8 @@ router = APIRouter()
 login_handler = None
 API_BASE_URL = "http://localhost:3002/"
 
-# 用户绑定的ID存储 (内存缓存)
+# 用户绑定的ID和MV参数存储 (内存缓存)
+# 格式: {"user": {"id": 123, "mv": True}}
 user_id_bindings = {}
 
 
@@ -1035,10 +1036,17 @@ async def play_vrc_main(
     # 1. 优先处理 ID 绑定逻辑
     if user:
         if id:
-            user_id_bindings[user] = id
-            print(f"💾 [用户绑定] 用户 '{user}' 绑定到 ID: {id}")
+            # 保存用户绑定的ID和MV参数
+            user_id_bindings[user] = {"id": id, "mv": True}  # /play/vrc接口不支持mv参数，默认True
+            print(f"💾 [用户绑定] 用户 '{user}' 绑定到 ID: {id}, MV: True")
         elif user in user_id_bindings and not id and not keywords:
-            id = user_id_bindings[user]
+            # 恢复用户绑定的ID（这里不需要恢复MV参数，因为/play/vrc不使用）
+            binding = user_id_bindings[user]
+            if isinstance(binding, dict):
+                id = binding.get("id")
+            else:
+                # 兼容旧格式（只有ID的情况）
+                id = binding
             print(f"🔗 [用户绑定] 用户 '{user}' 使用绑定的 ID: {id}")
 
     # 2. 解析目标 Song ID
@@ -1474,13 +1482,23 @@ async def generate_video_for_vrchat(
     # 处理用户绑定逻辑
     if user:
         if id:
-            # 如果同时提供了 user 和 id，保存绑定关系
-            user_id_bindings[user] = id
-            print(f"💾 [用户绑定] 用户 '{user}' 绑定到 ID: {id}")
+            # 如果同时提供了 user 和 id，保存绑定关系（包括ID和MV参数）
+            user_id_bindings[user] = {"id": id, "mv": mv}
+            print(f"💾 [用户绑定] 用户 '{user}' 绑定到 ID: {id}, MV: {mv}")
         elif user in user_id_bindings:
-            # 如果只提供了 user，使用之前绑定的 id
-            id = user_id_bindings[user]
-            print(f"🔗 [用户绑定] 用户 '{user}' 使用绑定的 ID: {id}")
+            # 如果只提供了 user，使用之前绑定的 id 和 mv 参数
+            binding = user_id_bindings[user]
+            if isinstance(binding, dict):
+                id = binding.get("id")
+                # 只有在未明确指定mv参数时才使用绑定的值
+                # 检查mv参数是否为默认值（True）且URL中没有明确指定
+                saved_mv = binding.get("mv", True)
+                mv = saved_mv  # 使用保存的MV参数
+                print(f"🔗 [用户绑定] 用户 '{user}' 使用绑定的 ID: {id}, MV: {mv}")
+            else:
+                # 兼容旧格式（只有ID的情况）
+                id = binding
+                print(f"🔗 [用户绑定] 用户 '{user}' 使用绑定的 ID: {id} (旧格式，MV保持默认)")
     
     if not id and not keywords:
         print(f"❌ [视频请求] 缺少必要参数")
