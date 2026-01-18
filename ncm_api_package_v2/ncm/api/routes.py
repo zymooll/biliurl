@@ -1912,3 +1912,128 @@ async def generate_video_for_vrchat(
         print(f"⏱️ 耗时: {elapsed:.2f}秒")
         print(f"{'='*60}\n")
         raise HTTPException(status_code=500, detail=f"视频生成失败: {str(e)}")
+
+
+@router.post("/api/user_binding")
+async def set_user_binding(
+    user: str = Query(..., description="用户标识"),
+    song_id: int = Query(..., description="歌曲ID"),
+    mv: bool = Query(True, description="是否优先使用MV"),
+    access_password: str = Cookie(None),
+    access_hash: str = Query(None)
+):
+    """
+    设置用户绑定 - 仅保存绑定关系，不播放视频
+    
+    参数:
+        user: 用户标识
+        song_id: 歌曲ID
+        mv: 是否优先使用MV（默认True）
+        access_password: 访问密码hash（通过Cookie传递）
+        access_hash: 访问密码hash（通过URL参数传递）
+        
+    返回:
+        绑定状态信息
+    """
+    # 验证访问密码或hash
+    if not verify_access_password(access_password, access_hash):
+        print(f"❌ [用户绑定] 访问密码验证失败")
+        raise HTTPException(status_code=403, detail="需要访问密码")
+    
+    # 保存绑定关系
+    user_id_bindings[user] = {"id": song_id, "mv": mv}
+    print(f"💾 [用户绑定API] 用户 '{user}' 绑定到歌曲ID: {song_id}, MV: {mv}")
+    
+    return {
+        "code": 200,
+        "message": "绑定成功",
+        "data": {
+            "user": user,
+            "song_id": song_id,
+            "mv": mv
+        }
+    }
+
+
+@router.get("/api/user_binding")
+async def get_user_binding(
+    user: str = Query(..., description="用户标识"),
+    access_password: str = Cookie(None),
+    access_hash: str = Query(None)
+):
+    """
+    获取用户绑定信息
+    
+    参数:
+        user: 用户标识
+        access_password: 访问密码hash（通过Cookie传递）
+        access_hash: 访问密码hash（通过URL参数传递）
+        
+    返回:
+        用户绑定的歌曲信息
+    """
+    # 验证访问密码或hash
+    if not verify_access_password(access_password, access_hash):
+        raise HTTPException(status_code=403, detail="需要访问密码")
+    
+    if user in user_id_bindings:
+        binding = user_id_bindings[user]
+        if isinstance(binding, dict):
+            return {
+                "code": 200,
+                "data": {
+                    "user": user,
+                    "song_id": binding.get("id"),
+                    "mv": binding.get("mv", True)
+                }
+            }
+        else:
+            # 兼容旧格式
+            return {
+                "code": 200,
+                "data": {
+                    "user": user,
+                    "song_id": binding,
+                    "mv": True
+                }
+            }
+    else:
+        return {
+            "code": 404,
+            "message": "未找到绑定记录"
+        }
+
+
+@router.delete("/api/user_binding")
+async def delete_user_binding(
+    user: str = Query(..., description="用户标识"),
+    access_password: str = Cookie(None),
+    access_hash: str = Query(None)
+):
+    """
+    删除用户绑定
+    
+    参数:
+        user: 用户标识
+        access_password: 访问密码hash（通过Cookie传递）
+        access_hash: 访问密码hash（通过URL参数传递）
+        
+    返回:
+        删除结果
+    """
+    # 验证访问密码或hash
+    if not verify_access_password(access_password, access_hash):
+        raise HTTPException(status_code=403, detail="需要访问密码")
+    
+    if user in user_id_bindings:
+        del user_id_bindings[user]
+        print(f"🗑️ [用户绑定API] 用户 '{user}' 的绑定已删除")
+        return {
+            "code": 200,
+            "message": "删除成功"
+        }
+    else:
+        return {
+            "code": 404,
+            "message": "未找到绑定记录"
+        }

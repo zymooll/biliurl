@@ -327,6 +327,7 @@ async function nextPage() {
 function displayResults(songs) {
     const songListDiv = document.getElementById('songList');
     const resultCountSpan = document.getElementById('resultCount');
+    const currentUser = getUser();
     
     resultCountSpan.textContent = `${songs.length} results`;
     
@@ -335,9 +336,9 @@ function displayResults(songs) {
         const fee = song.fee || 0;
         
         return `
-            <div class="song-item card" style="margin-bottom: 0;" onclick="selectAndPlay(${song.id}, '${escapeHtml(song.name)}', '${escapeHtml(song.artist)}')">
+            <div class="song-item card" style="margin-bottom: 0;">
                 <img src="${song.picUrl}?param=60y60" class="song-cover" alt="cover">
-                <div class="song-info">
+                <div class="song-info" onclick="selectAndPlay(${song.id}, '${escapeHtml(song.name)}', '${escapeHtml(song.artist)}')" style="flex: 1; cursor: pointer;">
                     <div class="song-name">
                         ${song.name}
                         ${hasMv ? '<span class="badge badge-mv">MV</span>' : ''}
@@ -345,8 +346,16 @@ function displayResults(songs) {
                     </div>
                     <div class="song-meta">${song.artist}</div>
                 </div>
-                <div class="play-icon">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M8 5V19L19 12L8 5Z"/></svg>
+                <div class="song-actions">
+                    ${currentUser ? `
+                        <button class="btn-bind" onclick="event.stopPropagation(); bindSong(${song.id}, '${escapeHtml(song.name)}', '${escapeHtml(song.artist)}')" title="绑定此歌曲">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                            绑定
+                        </button>
+                    ` : ''}
+                    <div class="play-icon" onclick="selectAndPlay(${song.id}, '${escapeHtml(song.name)}', '${escapeHtml(song.artist)}')">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M8 5V19L19 12L8 5Z"/></svg>
+                    </div>
                 </div>
             </div>
         `;
@@ -362,6 +371,71 @@ function escapeHtml(text) {
 
 async function selectAndPlay(id, name, artist) {
     await playSong(id, name, artist);
+}
+
+// ============ User Binding Functions ============
+async function bindSong(songId, name, artist) {
+    const user = getUser();
+    if (!user) {
+        alert('请先绑定用户名');
+        return;
+    }
+    
+    const useMv = document.getElementById('optionMv').checked;
+    
+    try {
+        const params = new URLSearchParams({
+            user: user,
+            song_id: songId,
+            mv: useMv ? '1' : '0'
+        });
+        
+        const accessHash = localStorage.getItem('access_hash') || getCookie('access_password');
+        if (accessHash) {
+            params.append('access_hash', accessHash);
+        }
+        
+        showStatusToast('正在绑定歌曲...', 'loading');
+        
+        const response = await fetch(`/api/user_binding?${params.toString()}`, {
+            method: 'POST'
+        });
+        
+        const data = await response.json();
+        
+        if (data.code === 200) {
+            showStatusToast(`绑定成功: ${name} - ${artist}`, 'success');
+            updateUserQuickUrl();
+        } else {
+            showStatusToast(`绑定失败: ${data.message || '未知错误'}`, 'error');
+        }
+    } catch (error) {
+        console.error('绑定失败:', error);
+        showStatusToast('绑定失败: ' + error.message, 'error');
+    }
+}
+
+async function getUserBinding() {
+    const user = getUser();
+    if (!user) return null;
+    
+    try {
+        const params = new URLSearchParams({ user: user });
+        const accessHash = localStorage.getItem('access_hash') || getCookie('access_password');
+        if (accessHash) {
+            params.append('access_hash', accessHash);
+        }
+        
+        const response = await fetch(`/api/user_binding?${params.toString()}`);
+        const data = await response.json();
+        
+        if (data.code === 200) {
+            return data.data;
+        }
+    } catch (error) {
+        console.error('获取绑定信息失败:', error);
+    }
+    return null;
 }
 
 async function playSong(id, name, artist) {

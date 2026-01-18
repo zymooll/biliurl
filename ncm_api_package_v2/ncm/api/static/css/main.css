@@ -610,11 +610,51 @@ body {
     color: #856404;
 }
 
+.song-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-bind {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    font-size: 0.85rem;
+    background: var(--bg-color);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: var(--transition);
+    white-space: nowrap;
+    opacity: 0;
+    transform: translateX(-10px);
+}
+
+.btn-bind:hover {
+    background: var(--blue);
+    color: #fff;
+    border-color: var(--blue);
+    transform: translateX(0);
+}
+
+.btn-bind svg {
+    flex-shrink: 0;
+}
+
+.song-item:hover .btn-bind {
+    opacity: 1;
+    transform: translateX(0);
+}
+
 .play-icon {
     opacity: 0;
     transform: translateX(-10px);
     transition: var(--transition);
     color: var(--text-primary);
+    cursor: pointer;
 }
 
 .song-item:hover .play-icon {
