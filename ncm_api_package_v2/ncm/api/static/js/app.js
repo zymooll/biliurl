@@ -409,7 +409,7 @@ async function bindSong(songId, name, artist) {
         const data = await response.json();
         
         if (data.code === 200) {
-            showStatusToast(`✅ 已绑定: ${artist} - ${name}`, 'success');
+            showStatusToast(`绑定成功: ${artist} - ${name}`, 'success');
             await updateUserQuickUrl();
             
             // Update the bound song button to show "已绑定" state
