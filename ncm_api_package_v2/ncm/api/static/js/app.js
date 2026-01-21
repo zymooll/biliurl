@@ -34,7 +34,7 @@ function getUser() {
     return getCookie('ncm_user');
 }
 
-function toggleUserPanel() {
+async function toggleUserPanel() {
     const panel = document.getElementById('userPanel');
     if (panel.style.display === 'none' || !panel.style.display) {
         panel.style.display = 'block';
@@ -43,16 +43,19 @@ function toggleUserPanel() {
             document.getElementById('userInput').value = user;
             document.getElementById('currentUserName').textContent = user;
             document.getElementById('currentUserDisplay').style.display = 'block';
+            await updateUserQuickUrl();
         } else {
             document.getElementById('userInput').value = '';
             document.getElementById('currentUserDisplay').style.display = 'none';
+            const userQuickUrlSection = document.getElementById('userQuickUrlSection');
+            if (userQuickUrlSection) userQuickUrlSection.style.display = 'none';
         }
     } else {
         panel.style.display = 'none';
     }
 }
 
-function saveUser() {
+async function saveUser() {
     const username = document.getElementById('userInput').value.trim();
     if (!username) {
         alert('请输入用户名');
@@ -67,7 +70,7 @@ function saveUser() {
     setCookie('ncm_user', username);
     document.getElementById('currentUserName').textContent = username;
     document.getElementById('currentUserDisplay').style.display = 'block';
-    updateUserQuickUrl();
+    await updateUserQuickUrl();
     showStatusToast('用户绑定成功', 'success');
 }
 
@@ -75,6 +78,8 @@ function clearUser() {
     setCookie('ncm_user', '', -1);
     document.getElementById('userInput').value = '';
     document.getElementById('currentUserDisplay').style.display = 'none';
+    const userQuickUrlSection = document.getElementById('userQuickUrlSection');
+    if (userQuickUrlSection) userQuickUrlSection.style.display = 'none';
     updateUserQuickUrl();
     showStatusToast('用户已清除', 'success');
 }
@@ -327,6 +332,7 @@ async function nextPage() {
 function displayResults(songs) {
     const songListDiv = document.getElementById('songList');
     const resultCountSpan = document.getElementById('resultCount');
+    const currentUser = getUser();
     
     resultCountSpan.textContent = `${songs.length} results`;
     
@@ -335,9 +341,9 @@ function displayResults(songs) {
         const fee = song.fee || 0;
         
         return `
-            <div class="song-item card" style="margin-bottom: 0;" onclick="selectAndPlay(${song.id}, '${escapeHtml(song.name)}', '${escapeHtml(song.artist)}')">
+            <div class="song-item card" style="margin-bottom: 0;">
                 <img src="${song.picUrl}?param=60y60" class="song-cover" alt="cover">
-                <div class="song-info">
+                <div class="song-info" onclick="selectAndPlay(${song.id}, '${escapeHtml(song.name)}', '${escapeHtml(song.artist)}')" style="flex: 1; cursor: pointer;">
                     <div class="song-name">
                         ${song.name}
                         ${hasMv ? '<span class="badge badge-mv">MV</span>' : ''}
@@ -345,8 +351,16 @@ function displayResults(songs) {
                     </div>
                     <div class="song-meta">${song.artist}</div>
                 </div>
-                <div class="play-icon">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M8 5V19L19 12L8 5Z"/></svg>
+                <div class="song-actions">
+                    ${currentUser ? `
+                        <button class="btn-bind" data-song-id="${song.id}" onclick="event.stopPropagation(); bindSong(${song.id}, '${escapeHtml(song.name)}', '${escapeHtml(song.artist)}')" title="绑定此歌曲">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                            绑定
+                        </button>
+                    ` : ''}
+                    <div class="play-icon" onclick="selectAndPlay(${song.id}, '${escapeHtml(song.name)}', '${escapeHtml(song.artist)}')">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M8 5V19L19 12L8 5Z"/></svg>
+                    </div>
                 </div>
             </div>
         `;
@@ -362,6 +376,87 @@ function escapeHtml(text) {
 
 async function selectAndPlay(id, name, artist) {
     await playSong(id, name, artist);
+}
+
+// ============ User Binding Functions ============
+async function bindSong(songId, name, artist) {
+    const user = getUser();
+    if (!user) {
+        alert('请先绑定用户名');
+        return;
+    }
+    
+    const useMv = document.getElementById('optionMv').checked;
+    
+    try {
+        const params = new URLSearchParams({
+            user: user,
+            song_id: songId,
+            mv: useMv ? '1' : '0'
+        });
+        
+        const accessHash = localStorage.getItem('access_hash') || getCookie('access_password');
+        if (accessHash) {
+            params.append('access_hash', accessHash);
+        }
+        
+        showStatusToast('正在绑定歌曲...', 'loading');
+        
+        const response = await fetch(`/api/user_binding?${params.toString()}`, {
+            method: 'POST'
+        });
+        
+        const data = await response.json();
+        
+        if (data.code === 200) {
+            showStatusToast(`绑定成功: ${artist} - ${name}`, 'success');
+            await updateUserQuickUrl();
+            
+            // Update the bound song button to show "已绑定" state
+            const songItems = document.querySelectorAll('.song-item');
+            songItems.forEach(item => {
+                const bindBtn = item.querySelector('.btn-bind');
+                if (bindBtn && bindBtn.getAttribute('data-song-id') == songId) {
+                    bindBtn.innerHTML = `
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                        已绑定
+                    `;
+                    bindBtn.style.background = '#10b981';
+                    bindBtn.style.color = '#fff';
+                    bindBtn.style.borderColor = '#10b981';
+                    bindBtn.style.opacity = '1';
+                }
+            });
+        } else {
+            showStatusToast(`绑定失败: ${data.message || '未知错误'}`, 'error');
+        }
+    } catch (error) {
+        console.error('绑定失败:', error);
+        showStatusToast('绑定失败: ' + error.message, 'error');
+    }
+}
+
+async function getUserBinding() {
+    const user = getUser();
+    if (!user) return null;
+    
+    try {
+        const params = new URLSearchParams({ user: user });
+        const accessHash = localStorage.getItem('access_hash') || getCookie('access_password');
+        if (accessHash) {
+            params.append('access_hash', accessHash);
+        }
+        
+        const response = await fetch(`/api/user_binding?${params.toString()}`);
+        const data = await response.json();
+        
+        if (data.code === 200) {
+            return data.data;
+        }
+    } catch (error) {
+        console.error('获取绑定信息失败:', error);
+    }
+    return null;
 }
 
 async function playSong(id, name, artist) {
@@ -458,10 +553,32 @@ function copyUserUrl() {
     }, 2000);
 }
 
-function updateUserQuickUrl() {
+function copyUserQuickUrl() {
+    const userQuickUrlInput = document.getElementById('userQuickUrl');
+    userQuickUrlInput.select();
+    document.execCommand('copy');
+    
+    const btn = event.currentTarget || event.target;
+    const originalText = btn.textContent;
+    btn.textContent = '已复制!';
+    btn.style.background = '#10b981';
+    btn.style.color = '#fff';
+    
+    setTimeout(() => {
+        btn.textContent = originalText;
+        btn.style.background = '';
+        btn.style.color = '';
+    }, 2000);
+}
+
+async function updateUserQuickUrl() {
     const user = getUser();
     const userUrlSection = document.getElementById('userUrlSection');
     const userUrlInput = document.getElementById('userUrl');
+    const userQuickUrlSection = document.getElementById('userQuickUrlSection');
+    const userQuickUrlInput = document.getElementById('userQuickUrl');
+    const currentBindingDisplay = document.getElementById('currentBindingDisplay');
+    const currentBindingSong = document.getElementById('currentBindingSong');
     
     if (user) {
         const accessHash = localStorage.getItem('access_hash') || getCookie('access_password');
@@ -472,10 +589,42 @@ function updateUserQuickUrl() {
         }
         
         const userUrl = window.location.origin + `/video?${params.toString()}`;
-        userUrlInput.value = userUrl;
-        userUrlSection.style.display = 'block';
+        
+        // Update both URL displays
+        if (userUrlInput) {
+            userUrlInput.value = userUrl;
+            userUrlSection.style.display = 'block';
+        }
+        if (userQuickUrlInput) {
+            userQuickUrlInput.value = userUrl;
+            userQuickUrlSection.style.display = 'block';
+        }
+        
+        // Get and display current binding
+        const binding = await getUserBinding();
+        if (binding && binding.song_id && currentBindingDisplay) {
+            // Fetch song details to show name
+            try {
+                const songResponse = await fetch(`/song/detail?id=${binding.song_id}`);
+                const songData = await songResponse.json();
+                if (songData.code === 200 && songData.songs && songData.songs.length > 0) {
+                    const song = songData.songs[0];
+                    const artist = song.ar && song.ar.length > 0 ? song.ar[0].name : '未知歌手';
+                    currentBindingSong.textContent = `${artist} - ${song.name}`;
+                    currentBindingDisplay.style.display = 'block';
+                } else {
+                    currentBindingDisplay.style.display = 'none';
+                }
+            } catch (error) {
+                console.error('获取歌曲详情失败:', error);
+                currentBindingDisplay.style.display = 'none';
+            }
+        } else if (currentBindingDisplay) {
+            currentBindingDisplay.style.display = 'none';
+        }
     } else {
-        userUrlSection.style.display = 'none';
+        if (userUrlSection) userUrlSection.style.display = 'none';
+        if (userQuickUrlSection) userQuickUrlSection.style.display = 'none';
     }
 }
 
@@ -1271,4 +1420,21 @@ function finishProgress() {
     statusToastTimeout = setTimeout(() => {
         closeStatusToast();
     }, 3000);
+}
+
+// ============ Initialization ============
+// Initialize on page load
+if (typeof window !== 'undefined') {
+    // Initialize theme
+    initTheme();
+    
+    // Initialize drag functionality
+    initFloatingVideoDrag();
+    initStatusToastDrag();
+    
+    // Update user quick URL if user is already logged in
+    const user = getUser();
+    if (user) {
+        updateUserQuickUrl();
+    }
 }

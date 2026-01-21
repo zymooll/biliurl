@@ -6,7 +6,7 @@ import os
 import time
 import base64
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, Executor
 from pathlib import Path
 from urllib.parse import quote
 import threading
@@ -22,10 +22,11 @@ from ncm.utils.access_password import AccessPasswordManager
 from ncm.api.web_ui import get_web_ui_html, get_login_page_html, STATIC_DIR
 
 router = APIRouter()
-login_handler = None
+login_handler: Optional[LoginProtocol] = None
 API_BASE_URL = "http://localhost:3002/"
 
-# 用户绑定的ID存储 (内存缓存)
+# 用户绑定的ID和MV参数存储 (内存缓存)
+# 格式: {"user": {"id": 123, "mv": True}}
 user_id_bindings = {}
 
 
@@ -33,7 +34,7 @@ user_id_bindings = {}
 STATIC_FILES_DIR = STATIC_DIR
 
 # 动态线程池管理器
-class DynamicThreadPoolManager:
+class DynamicThreadPoolManager(Executor):
     """动态线程池管理器 - 根据任务数量自动扩展和收缩"""
     
     def __init__(self, min_workers: int = 2, max_workers: Optional[int] = None, idle_timeout: int = 60):
@@ -148,11 +149,11 @@ class DynamicThreadPoolManager:
                 "idle_seconds": round(idle_time, 2)
             }
     
-    def shutdown(self, wait=True):
+    def shutdown(self, wait=True, *, cancel_futures=False):
         """关闭线程池"""
         self._running = False
         if self._executor:
-            self._executor.shutdown(wait=wait)
+            self._executor.shutdown(wait=wait, cancel_futures=cancel_futures)
 
 # 创建动态线程池管理器
 video_executor = DynamicThreadPoolManager(min_workers=2, idle_timeout=60)
@@ -335,7 +336,7 @@ def create_json_response(content, status_code=200):
         del response.headers["content-length"]
     return response
 
-def verify_access_password(access_password: str = Cookie(None), access_hash: str = None) -> bool:
+def verify_access_password(access_password: Optional[str] = Cookie(None), access_hash: Optional[str] = None) -> bool:
     """
     验证访问密码或hash
     支持两种方式：
@@ -459,7 +460,7 @@ async def favicon():
 async def get_qr_key():
     """1. 获取扫码登录所需的 Key"""
     try:
-        key = login_handler.getQRKey()
+        key = login_handler.getQRKey()  # type: ignore
         return create_json_response({"code": 200, "unikey": key})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -468,7 +469,7 @@ async def get_qr_key():
 async def create_qr_code(key: str):
     """2. 根据 Key 生成二维码 (返回 base64)"""
     try:
-        qrimg = login_handler.getQRCode(key)
+        qrimg = login_handler.getQRCode(key)  # type: ignore
         return create_json_response({"code": 200, "qrimg": qrimg})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -477,7 +478,7 @@ async def create_qr_code(key: str):
 async def check_qr_status(key: str):
     """3. 检查扫码状态"""
     try:
-        data = login_handler.checkQRStatus(key)
+        data = login_handler.checkQRStatus(key)  # type: ignore
         if data.get("code") == 803:
             # 登录成功，保存 Cookie
             cookie = data.get("cookie")
@@ -511,12 +512,12 @@ async def get_user_info():
 async def resolve_song(
     id: int, 
     level: str = "standard", 
-    unblock: bool = False
-):
+    unblock: bool = False,
     simple: bool = False,
     use_gpu: bool = False,
-    threads: int | None = None,
-    gpu_device: str | None = None
+    threads: Optional[int] = None,
+    gpu_device: Optional[str] = None
+):
     cookie = load_cookie()
     result = UserInteractive.getDownloadUrl(id, level, unblock, cookie)
     
@@ -648,14 +649,14 @@ async def get_playlist_tracks(id: str):
 @router.get("/logout")
 async def logout():
     """7. 退出登录"""
-    result = login_handler.Logout()
+    result = login_handler.Logout()  # type: ignore
     return create_json_response(result)
 
 @router.post("/login/sms/send")
 async def send_sms_code(phone: str):
     """8. 发送短信验证码"""
     try:
-        result = login_handler.sendSMS(phone)
+        result = login_handler.sendSMS(phone)  # type: ignore
         return create_json_response(result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -664,7 +665,7 @@ async def send_sms_code(phone: str):
 async def verify_sms_login(phone: str, captcha: str):
     """9. 短信验证码登录"""
     try:
-        result = login_handler.verifySMS(phone, captcha)
+        result = login_handler.verifySMS(phone, captcha)  # type: ignore
         if result.get("code") == 200:
             cookie = result.get("cookie")
             if cookie:
@@ -682,7 +683,7 @@ async def verify_sms_login(phone: str, captcha: str):
 async def phone_password_login(phone: str, password: str):
     """10. 手机号密码登录"""
     try:
-        result = login_handler.PhonePasswordLogin(phone, password)
+        result = login_handler.PhonePasswordLogin(phone, password)  # type: ignore
         if result.get("code") == 200:
             cookie = result.get("cookie")
             if cookie:
@@ -727,8 +728,8 @@ async def refresh_cookie():
 
 @router.get("/play")
 async def play_song_redirect(
-    id: str = None, 
-    keywords: str = None,
+    id: Optional[str] = None, 
+    keywords: Optional[str] = None,
     level: str = "standard", 
     unblock: bool = False
 ):
@@ -758,7 +759,7 @@ async def play_song_redirect(
     
     # 确保 song_id 是整数
     try:
-        song_id = int(song_id)
+        song_id = int(song_id)  # type: ignore
     except (ValueError, TypeError):
         raise HTTPException(status_code=400, detail="无效的歌曲 ID")
 
@@ -772,8 +773,8 @@ async def play_song_redirect(
 
 @router.get("/play/direct")
 async def play_song_direct(
-    id: str = None, 
-    keywords: str = None,
+    id: Optional[str] = None, 
+    keywords: Optional[str] = None,
     level: str = "standard", 
     unblock: bool = False
 ):
@@ -832,7 +833,7 @@ async def play_song_direct(
     
     # 确保 song_id 是整数
     try:
-        song_id = int(song_id)
+        song_id = int(song_id)  # type: ignore
     except (ValueError, TypeError):
         return create_json_response({
             "code": 400,
@@ -882,8 +883,8 @@ async def play_song_direct(
 
 @router.get("/stream")
 async def stream_audio_proxy(
-    id: str = None,
-    keywords: str = None,
+    id: Optional[str] = None,
+    keywords: Optional[str] = None,
     level: str = "standard",
     unblock: bool = False
 ):
@@ -922,7 +923,7 @@ async def stream_audio_proxy(
     
     # 确保 song_id 是整数
     try:
-        song_id = int(song_id)
+        song_id = int(song_id)  # type: ignore
     except (ValueError, TypeError):
         raise HTTPException(status_code=400, detail="无效的歌曲 ID")
 
@@ -1002,7 +1003,7 @@ def get_real_ip(request: Request) -> str:
         return headers["cf-connecting-ip"]
     if "x-forwarded-for" in headers:
         return headers["x-forwarded-for"].split(",")[0].strip()
-    return request.client.host
+    return request.client.host  # type: ignore
 
 def get_song_id_by_ip(request: Request):
     """读取阶段：根据 IP 查 SongID (仅用于封面接口)"""
@@ -1022,11 +1023,11 @@ def get_song_id_by_ip(request: Request):
 async def play_vrc_main(
     request: Request,
     background_tasks: BackgroundTasks, 
-    id: str = None,
-    keywords: str = None,
+    id: Optional[str] = None,
+    keywords: Optional[str] = None,
     level: str = "standard",
     unblock: bool = False,
-    user: str = None
+    user: Optional[str] = None
 ):
     # 0. 如果 id 参数是URL，先提取出真实ID
     if id:
@@ -1035,10 +1036,17 @@ async def play_vrc_main(
     # 1. 优先处理 ID 绑定逻辑
     if user:
         if id:
-            user_id_bindings[user] = id
-            print(f"💾 [用户绑定] 用户 '{user}' 绑定到 ID: {id}")
+            # 保存用户绑定的ID和MV参数
+            user_id_bindings[user] = {"id": id, "mv": True}  # /play/vrc接口不支持mv参数，默认True
+            print(f"💾 [用户绑定] 用户 '{user}' 绑定到 ID: {id}, MV: True")
         elif user in user_id_bindings and not id and not keywords:
-            id = user_id_bindings[user]
+            # 恢复用户绑定的ID（这里不需要恢复MV参数，因为/play/vrc不使用）
+            binding = user_id_bindings[user]
+            if isinstance(binding, dict):
+                id = binding.get("id")
+            else:
+                # 兼容旧格式（只有ID的情况）
+                id = binding
             print(f"🔗 [用户绑定] 用户 '{user}' 使用绑定的 ID: {id}")
 
     # 2. 解析目标 Song ID
@@ -1429,18 +1437,18 @@ def cleanup_file(path: str):
 @router.get("/video")
 async def generate_video_for_vrchat(
     background_tasks: BackgroundTasks,
-    id: int = None,
-    keywords: str = None,
+    id: Optional[int] = None,
+    keywords: Optional[str] = None,
     level: str = "standard",
     unblock: bool = False,
     simple: bool = False,
     use_gpu: bool = True,
-    threads: int | None = None,
-    gpu_device: str | None = None,
+    threads: Optional[int] = None,
+    gpu_device: Optional[str] = None,
     mv: bool = True,
-    user: str = None,
-    access_password: str = Cookie(None),
-    access_hash: str = Query(None)
+    user: Optional[str] = None,
+    access_password: Optional[str] = Cookie(None),
+    access_hash: Optional[str] = Query(None)
 ):
     """
     13. 生成MP4视频 (VRChat USharpVideo专用) - **需要访问密码**
@@ -1474,13 +1482,23 @@ async def generate_video_for_vrchat(
     # 处理用户绑定逻辑
     if user:
         if id:
-            # 如果同时提供了 user 和 id，保存绑定关系
-            user_id_bindings[user] = id
-            print(f"💾 [用户绑定] 用户 '{user}' 绑定到 ID: {id}")
+            # 如果同时提供了 user 和 id，保存绑定关系（包括ID和MV参数）
+            user_id_bindings[user] = {"id": id, "mv": mv}
+            print(f"💾 [用户绑定] 用户 '{user}' 绑定到 ID: {id}, MV: {mv}")
         elif user in user_id_bindings:
-            # 如果只提供了 user，使用之前绑定的 id
-            id = user_id_bindings[user]
-            print(f"🔗 [用户绑定] 用户 '{user}' 使用绑定的 ID: {id}")
+            # 如果只提供了 user，使用之前绑定的 id 和 mv 参数
+            binding = user_id_bindings[user]
+            if isinstance(binding, dict):
+                id = int(binding.get("id", 0))  # type: ignore
+                # 只有在未明确指定mv参数时才使用绑定的值
+                # 检查mv参数是否为默认值（True）且URL中没有明确指定
+                saved_mv = binding.get("mv", True)
+                mv = saved_mv  # 使用保存的MV参数
+                print(f"🔗 [用户绑定] 用户 '{user}' 使用绑定的 ID: {id}, MV: {mv}")
+            else:
+                # 兼容旧格式（只有ID的情况）
+                id = int(binding)  # type: ignore
+                print(f"🔗 [用户绑定] 用户 '{user}' 使用绑定的 ID: {id} (旧格式，MV保持默认)")
     
     if not id and not keywords:
         print(f"❌ [视频请求] 缺少必要参数")
@@ -1507,7 +1525,7 @@ async def generate_video_for_vrchat(
         print(f"✅ 搜索匹配: {song_name} - {artist_name} (ID: {song_id})")
     
     try:
-        song_id = int(song_id)
+        song_id = int(song_id)  # type: ignore
     except (ValueError, TypeError):
         raise HTTPException(status_code=400, detail="无效的歌曲 ID")
 
@@ -1521,7 +1539,7 @@ async def generate_video_for_vrchat(
             )
             # print("DEBUG: ")
             # print(song_detail)
-            mv_id = song_detail['songs'][0]['mv']
+            mv_id = song_detail['songs'][0]['mv']  # type: ignore
             if mv_id == 0:
               print(f"⚠️ MV 不存在，降级使用音频生成视频")
             else:
@@ -1534,7 +1552,7 @@ async def generate_video_for_vrchat(
                   max_retries=2,  # MV 检查失败可快速降级，不需要太多重试
                   timeout=5
               )
-              mv_data = mv_response.json()
+              mv_data = mv_response.json()  # type: ignore
               # print("DEBUG: ")
               # print(mv_data)
               
@@ -1581,8 +1599,8 @@ async def generate_video_for_vrchat(
                 str(song_id),
                 max_retries=2  # 缓存命中时重试次数少一些
             )
-            if song_detail.get("code") == 200 and song_detail.get("songs"):
-                song_info = song_detail["songs"][0]
+            if song_detail.get("code") == 200 and song_detail.get("songs"):  # type: ignore
+                song_info = song_detail["songs"][0]  # type: ignore
                 song_name = song_info.get("name", "未知歌曲")
                 artist_name = song_info.get("ar", [{}])[0].get("name", "未知歌手")
             else:
@@ -1616,13 +1634,13 @@ async def generate_video_for_vrchat(
         )
         
         # 详细输出获取结果
-        print(f"🎵 音频获取结果: success={audio_result.get('success')}, has_url={bool(audio_result.get('url'))}")
-        if audio_result.get("is_grey_unlocked"):
+        print(f"🎵 音频获取结果: success={audio_result.get('success')}, has_url={bool(audio_result.get('url'))}")  # type: ignore
+        if audio_result.get("is_grey_unlocked"):  # type: ignore
             print(f"🔓 使用灰色歌曲解锁API获取到音源")
         
-        if not audio_result["success"]:
-            error_msg = audio_result.get("error", "未知错误")
-            error_data = audio_result.get("data", {})
+        if not audio_result["success"]:  # type: ignore
+            error_msg = audio_result.get("error", "未知错误")  # type: ignore
+            error_data = audio_result.get("data", {})  # type: ignore
             print(f"❌ 音频获取失败: {error_msg}")
             if error_data:
                 print(f"📊 API返回数据: {error_data}")
@@ -1631,14 +1649,14 @@ async def generate_video_for_vrchat(
                 detail=f"无法获取歌曲链接: {error_msg}"
             )
         
-        if not audio_result.get("url"):
+        if not audio_result.get("url"):  # type: ignore
             print(f"❌ 音频URL为空，完整结果: {audio_result}")
             raise HTTPException(
                 status_code=404, 
                 detail="无法获取歌曲链接: URL为空，可能是版权受限或歌曲不存在"
             )
         
-        audio_url = audio_result["url"]
+        audio_url = audio_result["url"]  # type: ignore
         print(f"✅ 成功获取音频URL (song_id={song_id}): {audio_url[:100]}...")
         
         # 2. 获取歌曲详情（封面）- 带重试
@@ -1647,10 +1665,10 @@ async def generate_video_for_vrchat(
             str(song_id),
             max_retries=3
         )
-        if song_detail.get("code") != 200:
+        if song_detail.get("code") != 200:  # type: ignore
             raise HTTPException(status_code=404, detail="无法获取歌曲详情")
         
-        songs = song_detail.get("songs", [])
+        songs = song_detail.get("songs", [])  # type: ignore
         if not songs:
             raise HTTPException(status_code=404, detail="歌曲信息为空")
         
@@ -1719,7 +1737,7 @@ async def generate_video_for_vrchat(
             max_retries=3,
             timeout=10
         )
-        lyric_data = lyric_response.json()
+        lyric_data = lyric_response.json()  # type: ignore
         print(f"📄 歌词API响应: code={lyric_data.get('code')}")
         
         if lyric_data.get("code") != 200:
@@ -1894,3 +1912,128 @@ async def generate_video_for_vrchat(
         print(f"⏱️ 耗时: {elapsed:.2f}秒")
         print(f"{'='*60}\n")
         raise HTTPException(status_code=500, detail=f"视频生成失败: {str(e)}")
+
+
+@router.post("/api/user_binding")
+async def set_user_binding(
+    user: str = Query(..., description="用户标识"),
+    song_id: int = Query(..., description="歌曲ID"),
+    mv: bool = Query(True, description="是否优先使用MV"),
+    access_password: str = Cookie(None),
+    access_hash: str = Query(None)
+):
+    """
+    设置用户绑定 - 仅保存绑定关系，不播放视频
+    
+    参数:
+        user: 用户标识
+        song_id: 歌曲ID
+        mv: 是否优先使用MV（默认True）
+        access_password: 访问密码hash（通过Cookie传递）
+        access_hash: 访问密码hash（通过URL参数传递）
+        
+    返回:
+        绑定状态信息
+    """
+    # 验证访问密码或hash
+    if not verify_access_password(access_password, access_hash):
+        print(f"❌ [用户绑定] 访问密码验证失败")
+        raise HTTPException(status_code=403, detail="需要访问密码")
+    
+    # 保存绑定关系
+    user_id_bindings[user] = {"id": song_id, "mv": mv}
+    print(f"💾 [用户绑定API] 用户 '{user}' 绑定到歌曲ID: {song_id}, MV: {mv}")
+    
+    return {
+        "code": 200,
+        "message": "绑定成功",
+        "data": {
+            "user": user,
+            "song_id": song_id,
+            "mv": mv
+        }
+    }
+
+
+@router.get("/api/user_binding")
+async def get_user_binding(
+    user: str = Query(..., description="用户标识"),
+    access_password: str = Cookie(None),
+    access_hash: str = Query(None)
+):
+    """
+    获取用户绑定信息
+    
+    参数:
+        user: 用户标识
+        access_password: 访问密码hash（通过Cookie传递）
+        access_hash: 访问密码hash（通过URL参数传递）
+        
+    返回:
+        用户绑定的歌曲信息
+    """
+    # 验证访问密码或hash
+    if not verify_access_password(access_password, access_hash):
+        raise HTTPException(status_code=403, detail="需要访问密码")
+    
+    if user in user_id_bindings:
+        binding = user_id_bindings[user]
+        if isinstance(binding, dict):
+            return {
+                "code": 200,
+                "data": {
+                    "user": user,
+                    "song_id": binding.get("id"),
+                    "mv": binding.get("mv", True)
+                }
+            }
+        else:
+            # 兼容旧格式
+            return {
+                "code": 200,
+                "data": {
+                    "user": user,
+                    "song_id": binding,
+                    "mv": True
+                }
+            }
+    else:
+        return {
+            "code": 404,
+            "message": "未找到绑定记录"
+        }
+
+
+@router.delete("/api/user_binding")
+async def delete_user_binding(
+    user: str = Query(..., description="用户标识"),
+    access_password: str = Cookie(None),
+    access_hash: str = Query(None)
+):
+    """
+    删除用户绑定
+    
+    参数:
+        user: 用户标识
+        access_password: 访问密码hash（通过Cookie传递）
+        access_hash: 访问密码hash（通过URL参数传递）
+        
+    返回:
+        删除结果
+    """
+    # 验证访问密码或hash
+    if not verify_access_password(access_password, access_hash):
+        raise HTTPException(status_code=403, detail="需要访问密码")
+    
+    if user in user_id_bindings:
+        del user_id_bindings[user]
+        print(f"🗑️ [用户绑定API] 用户 '{user}' 的绑定已删除")
+        return {
+            "code": 200,
+            "message": "删除成功"
+        }
+    else:
+        return {
+            "code": 404,
+            "message": "未找到绑定记录"
+        }

@@ -177,6 +177,60 @@ body {
     flex-direction: column;
 }
 
+/* User Panel Quick URL Section */
+.user-quick-url-section {
+    margin-top: 15px;
+    padding: 12px;
+    background: rgba(0, 112, 243, 0.08);
+    border: 1px solid rgba(0, 112, 243, 0.2);
+    border-radius: 8px;
+}
+
+[data-theme="dark"] .user-quick-url-section {
+    background: rgba(0, 112, 243, 0.12);
+    border-color: rgba(0, 112, 243, 0.25);
+}
+
+.user-quick-url-section label {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--text-primary);
+}
+
+.user-quick-url-section .api-url-group {
+    margin-top: 0;
+}
+
+/* Current Binding Display */
+.current-binding-display {
+    margin-top: 10px;
+    padding: 8px;
+    background: rgba(16, 185, 129, 0.08);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    border-radius: 6px;
+    animation: fadeInBounce 0.4s ease;
+}
+
+[data-theme="dark"] .current-binding-display {
+    background: rgba(16, 185, 129, 0.12);
+    border-color: rgba(16, 185, 129, 0.25);
+}
+
+@keyframes fadeInBounce {
+    0% {
+        opacity: 0;
+        transform: scale(0.95) translateY(-5px);
+    }
+    60% {
+        opacity: 1;
+        transform: scale(1.01) translateY(0);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
 /* Header */
 .header {
     text-align: center;
@@ -610,11 +664,52 @@ body {
     color: #856404;
 }
 
+.song-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-bind {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    font-size: 0.85rem;
+    background: var(--bg-color);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    white-space: nowrap;
+    opacity: 0;
+    transform: translateX(-8px);
+}
+
+.btn-bind:hover {
+    background: var(--blue);
+    color: #fff;
+    border-color: var(--blue);
+    transform: translateX(0);
+    box-shadow: 0 2px 8px rgba(0, 112, 243, 0.3);
+}
+
+.btn-bind svg {
+    flex-shrink: 0;
+}
+
+.song-item:hover .btn-bind {
+    opacity: 1;
+    transform: translateX(0);
+}
+
 .play-icon {
     opacity: 0;
-    transform: translateX(-10px);
-    transition: var(--transition);
+    transform: translateX(-8px);
+    transition: all 0.3s ease;
     color: var(--text-primary);
+    cursor: pointer;
 }
 
 .song-item:hover .play-icon {

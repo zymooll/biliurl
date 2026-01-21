@@ -10,7 +10,7 @@
 
     <div class="header">
         <h1>NCM Video Service</h1>
-        <p>网易云音乐视频预载服务</p>
+        <p>网易云音乐服务</p>
     </div>
 
     <!-- Theme Toggle Button -->
@@ -58,6 +58,25 @@
                     当前用户: <strong id="currentUserName"></strong>
                 </p>
             </div>
+            
+            <!-- User Quick URL Section -->
+            <div id="userQuickUrlSection" class="user-quick-url-section" style="display: none;">
+                <label style="font-size: 0.8rem; font-weight: 600;">🔗 User Quick URL</label>
+                <div class="api-url-group">
+                    <input type="text" id="userQuickUrl" readonly class="api-input" value="">
+                    <button onclick="copyUserQuickUrl()" class="btn-copy">复制</button>
+                </div>
+                <p style="margin-top: 6px; font-size: 0.75rem; color: var(--text-secondary);">
+                    💡 使用此链接可直接播放您绑定的歌曲
+                </p>
+                
+                <!-- Current Binding Display -->
+                <div id="currentBindingDisplay" class="current-binding-display" style="display: none;">
+                    <p style="margin: 0; font-size: 0.8rem; color: var(--text-primary);">
+                        ✅ 已绑定: <strong id="currentBindingSong" style="color: #10b981;"></strong>
+                    </p>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -71,7 +90,7 @@
 
     <div class="container">
         <!-- Login Card -->
-        <div id="loginCard" class="card" style="display: none;">
+        <div id="loginCard" style="display: none;">
             <h2 style="margin-bottom: 20px; font-size: 1.5rem;">网易云音乐登录</h2>
             
             <!-- Login Status -->
@@ -168,7 +187,6 @@
                         <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 5px;">新密码的Hash值：</p>
                         <input type="text" id="newHashValue" readonly class="input" style="font-family: monospace; font-size: 0.85rem; margin-top: 5px;" value="">
                     </div>
-                </div>
                 </div>
             </div>
         </div>
