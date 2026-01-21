@@ -1034,26 +1034,44 @@ async def play_vrc_main(
     level: str = "standard",
     unblock: bool = False,
     user: Optional[str] = None,
-    bvid: Optional[str] = None,  # B站视频BV号
+    bvid: Optional[str] = None,  # B站视频BV号（兼容旧参数）
     qn: int = 64  # B站视频清晰度
 ):
     """
     VRChat 主入口 - 支持网易云音乐和B站视频
     
-    参数分流：
-    - 如果提供 bvid 参数 -> B站视频播放
-    - 如果提供 id 或 keywords -> 网易云音乐播放
+    智能参数识别：
+    - id 为纯数字 -> 网易云音乐播放
+    - id 以 BV 开头（不区分大小写）-> B站视频播放
+    - bvid 参数（兼容旧接口）-> B站视频播放
+    - keywords -> 网易云音乐搜索播放
     """
+    
+    # ==========================================
+    # 🎯 智能识别 id 参数类型
+    # ==========================================
+    detected_bvid = None
+    
+    # 1. 优先检查 bvid 参数（兼容旧接口）
+    if bvid is not None and bvid.strip():
+        detected_bvid = bvid.strip()
+        print(f"🎬 [智能识别] 检测到 bvid 参数: {detected_bvid}")
+    
+    # 2. 检查 id 参数，判断是 BV 号还是歌曲 ID
+    elif id is not None and id.strip():
+        id_stripped = id.strip()
+        # 检查是否以 BV 开头（不区分大小写）
+        if id_stripped.upper().startswith('BV'):
+            detected_bvid = id_stripped
+            print(f"🎬 [智能识别] id 参数识别为 B站视频: {detected_bvid}")
+        else:
+            # 不是 BV 开头，保持原样，后续作为歌曲 ID 处理
+            print(f"🎵 [智能识别] id 参数识别为网易云歌曲: {id_stripped}")
     
     # ==========================================
     # 🎬 分支 0: B站视频播放
     # ==========================================
-    # 检查是否提供了 bvid 参数（注意：空字符串也算提供了参数）
-    if bvid is not None:
-        # 如果 bvid 是空字符串，返回错误
-        if not bvid or not bvid.strip():
-            raise HTTPException(status_code=400, detail="bvid 参数不能为空")
-        
+    if detected_bvid:
         try:
             if bili_video_handler is None:
                 raise HTTPException(status_code=500, detail="B站视频处理器未初始化")
@@ -1065,9 +1083,9 @@ async def play_vrc_main(
                 cookies = BiliCookieManager.dict_to_cookiejar(cookie_dict)
             
             # 获取视频播放URL
-            video_url = bili_video_handler.getPlayUrl(bvid, qn, cookies)
+            video_url = bili_video_handler.getPlayUrl(detected_bvid, qn, cookies)
             
-            print(f"✅ [B站视频] 重定向到视频流: {bvid} (qn={qn})")
+            print(f"✅ [B站视频] 重定向到视频流: {detected_bvid} (qn={qn})")
             
             # 重定向到视频流URL
             return RedirectResponse(url=video_url, status_code=302)
