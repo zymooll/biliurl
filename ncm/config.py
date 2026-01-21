@@ -9,3 +9,7 @@ GUEST_COOKIE_FILE = "cookie-guest.json"
 ACCESS_PASSWORD_FILE = "access_password.json"
 DEFAULT_ACCESS_PASSWORD = "ncm2024"  # 默认访问密码
 ACCESS_PASSWORD_SALT = "ncm_secure_salt_2024"  # 用于hash加盐的salt值，可自定义
+
+# B站配置
+BILI_COOKIE_FILE = "bili_cookie.json"  # B站Cookie文件
+DEFAULT_BILI_QUALITY = 64  # 默认清晰度 (64=720P)

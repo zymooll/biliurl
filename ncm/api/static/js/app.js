@@ -1272,3 +1272,168 @@ function finishProgress() {
         closeStatusToast();
     }, 3000);
 }
+
+
+// ============ B站登录功能 ============
+let biliQrCheckInterval = null;
+
+// 检查B站登录状态
+async function checkBiliLoginStatus() {
+    const statusDiv = document.getElementById('biliLoginStatus');
+    const statusText = document.getElementById('biliLoginStatusText');
+    const logoutSection = document.getElementById('biliLogoutSection');
+    const qrSection = document.getElementById('biliQRLoginSection');
+    
+    try {
+        const response = await fetch('/bili/login/info');
+        const data = await response.json();
+        
+        if (data.code === 200 && data.logged_in) {
+            statusDiv.className = 'login-status success';
+            statusText.textContent = `✅ 已登录：${data.uname} (UID: ${data.mid}) LV${data.level}`;
+            logoutSection.style.display = 'block';
+            qrSection.style.display = 'none';
+            console.log('B站登录状态已更新：', data.uname);
+            return true;
+        } else {
+            statusDiv.className = 'login-status';
+            statusText.textContent = '未登录，请扫码登录';
+            logoutSection.style.display = 'none';
+            qrSection.style.display = 'block';
+            return false;
+        }
+    } catch (error) {
+        console.error('检查B站登录状态失败：', error);
+        statusDiv.className = 'login-status';
+        statusText.textContent = '未登录，请扫码登录';
+        logoutSection.style.display = 'none';
+        qrSection.style.display = 'block';
+        return false;
+    }
+}
+
+// 开始B站二维码登录
+async function startBiliQRLogin() {
+    const qrImage = document.getElementById('biliQRCodeImage');
+    const qrTip = document.getElementById('biliQRTip');
+    
+    try {
+        qrTip.textContent = '正在生成二维码...';
+        qrTip.style.color = 'var(--text-secondary)';
+        
+        // 清除之前的轮询
+        if (biliQrCheckInterval) {
+            clearInterval(biliQrCheckInterval);
+        }
+        
+        // 获取二维码
+        const response = await fetch('/bili/login/qr');
+        const data = await response.json();
+        
+        if (data.code !== 200) {
+            throw new Error('获取二维码失败');
+        }
+        
+        const qrKey = data.qr_key;
+        
+        // 显示二维码
+        if (data.qr_img) {
+            qrImage.src = data.qr_img;
+        } else {
+            // 如果没有base64图片，可以使用URL生成二维码
+            qrImage.src = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(data.qr_url)}`;
+        }
+        
+        qrTip.textContent = '请使用哔哩哔哩APP扫码登录';
+        qrTip.style.color = 'var(--text-secondary)';
+        
+        let checkCount = 0;
+        const maxChecks = 90; // B站二维码有效期3分钟
+        
+        // 开始轮询登录状态
+        biliQrCheckInterval = setInterval(async () => {
+            checkCount++;
+            
+            if (checkCount > maxChecks) {
+                clearInterval(biliQrCheckInterval);
+                qrTip.textContent = '⏱️ 登录超时，请刷新二维码重试';
+                qrTip.style.color = '#ef4444';
+                return;
+            }
+            
+            try {
+                const checkResponse = await fetch(`/bili/login/poll?qr_key=${qrKey}`);
+                const checkData = await checkResponse.json();
+                
+                if (checkData.code === 86038) {
+                    // 二维码已失效
+                    clearInterval(biliQrCheckInterval);
+                    qrTip.textContent = '❌ 二维码已过期，请刷新';
+                    qrTip.style.color = '#ef4444';
+                } else if (checkData.code === 86101) {
+                    // 等待扫码
+                    const remaining = maxChecks - checkCount;
+                    qrTip.textContent = `⌛ 等待扫码中... (${Math.floor(remaining * 2 / 60)}分${remaining * 2 % 60}秒后超时)`;
+                    qrTip.style.color = 'var(--text-secondary)';
+                } else if (checkData.code === 86090) {
+                    // 已扫码，等待确认
+                    qrTip.textContent = '📱 已扫码，请在手机上确认...';
+                    qrTip.style.color = '#00a1d6';
+                } else if (checkData.code === 0) {
+                    // 登录成功
+                    clearInterval(biliQrCheckInterval);
+                    qrTip.textContent = '✅ 登录成功！';
+                    qrTip.style.color = '#10b981';
+                    
+                    // 延迟1秒后更新状态
+                    setTimeout(() => {
+                        checkBiliLoginStatus();
+                        showStatusToast('B站登录成功', 'success');
+                    }, 1000);
+                }
+            } catch (error) {
+                console.error('检查B站登录状态失败：', error);
+            }
+        }, 2000); // 每2秒检查一次
+        
+    } catch (error) {
+        console.error('启动B站二维码登录失败：', error);
+        qrTip.textContent = '❌ 二维码生成失败，请重试';
+        qrTip.style.color = '#ef4444';
+    }
+}
+
+// B站退出登录
+async function biliLogout() {
+    if (!confirm('确定要退出B站登录吗？')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/bili/login', {
+            method: 'DELETE'
+        });
+        const data = await response.json();
+        
+        if (data.code === 200) {
+            showStatusToast('已退出B站登录', 'success');
+            checkBiliLoginStatus();
+        } else {
+            throw new Error(data.message || '退出登录失败');
+        }
+    } catch (error) {
+        console.error('退出B站登录失败：', error);
+        showStatusToast('退出登录失败', 'error');
+    }
+}
+
+// 页面加载时检查B站登录状态
+document.addEventListener('DOMContentLoaded', function() {
+    // 原有的初始化代码...
+    
+    // 检查B站登录状态
+    setTimeout(() => {
+        checkBiliLoginStatus();
+    }, 1000);
+});
+

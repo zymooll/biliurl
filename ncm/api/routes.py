@@ -20,9 +20,13 @@ from ncm.utils.cookie import load_cookie, save_cookie
 from ncm.utils.database import db
 from ncm.utils.access_password import AccessPasswordManager
 from ncm.api.web_ui import get_web_ui_html, get_login_page_html, STATIC_DIR
+from core.bili import BiliLogin, BiliVideo
+from core.bili_cookie import BiliCookieManager
 
 router = APIRouter()
 login_handler: Optional[LoginProtocol] = None
+bili_login_handler: Optional[BiliLogin] = None
+bili_video_handler: Optional[BiliVideo] = None
 API_BASE_URL = "http://localhost:3002/"
 
 # 用户绑定的ID和MV参数存储 (内存缓存)
@@ -159,8 +163,10 @@ class DynamicThreadPoolManager(Executor):
 video_executor = DynamicThreadPoolManager(min_workers=2, idle_timeout=60)
 
 def init_login_handler():
-    global login_handler
+    global login_handler, bili_login_handler, bili_video_handler
     login_handler = LoginProtocol()
+    bili_login_handler = BiliLogin()
+    bili_video_handler = BiliVideo()
 
 def retry_request(func, *args, max_retries=5, timeout=10, **kwargs):
     """
@@ -1017,7 +1023,7 @@ def get_song_id_by_ip(request: Request):
     return None
 
 # ==========================================
-# 接口 1: VRChat 主入口 (处理音频 + 歌词)
+# 接口 1: VRChat 主入口 (处理音频 + 歌词 + B站视频)
 # ==========================================
 @router.get("/play/vrc")
 async def play_vrc_main(
@@ -1027,8 +1033,51 @@ async def play_vrc_main(
     keywords: Optional[str] = None,
     level: str = "standard",
     unblock: bool = False,
-    user: Optional[str] = None
+    user: Optional[str] = None,
+    bvid: Optional[str] = None,  # B站视频BV号
+    qn: int = 64  # B站视频清晰度
 ):
+    """
+    VRChat 主入口 - 支持网易云音乐和B站视频
+    
+    参数分流：
+    - 如果提供 bvid 参数 -> B站视频播放
+    - 如果提供 id 或 keywords -> 网易云音乐播放
+    """
+    
+    # ==========================================
+    # 🎬 分支 0: B站视频播放
+    # ==========================================
+    if bvid:
+        try:
+            if bili_video_handler is None:
+                raise HTTPException(status_code=500, detail="B站视频处理器未初始化")
+            
+            # 加载已保存的cookies（如果有）
+            cookie_dict = BiliCookieManager.load_cookie()
+            cookies = None
+            if cookie_dict:
+                cookies = BiliCookieManager.dict_to_cookiejar(cookie_dict)
+            
+            # 获取视频播放URL
+            video_url = bili_video_handler.getPlayUrl(bvid, qn, cookies)
+            
+            print(f"✅ [B站视频] 重定向到视频流: {bvid} (qn={qn})")
+            
+            # 重定向到视频流URL
+            return RedirectResponse(url=video_url, status_code=302)
+            
+        except ValueError as e:
+            # 参数错误或视频不存在
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            print(f"❌ 获取B站视频流失败: {e}")
+            raise HTTPException(status_code=500, detail=f"获取视频流失败: {str(e)}")
+    
+    # ==========================================
+    # 🎵 分支 1: 网易云音乐播放
+    # ==========================================
+    
     # 0. 如果 id 参数是URL，先提取出真实ID
     if id:
         id = extract_song_id_from_url(id)
@@ -2037,3 +2086,139 @@ async def delete_user_binding(
             "code": 404,
             "message": "未找到绑定记录"
         }
+
+
+# ==================== B站相关接口 ====================
+
+@router.get("/bili/login/qr")
+async def bili_get_qr():
+    """
+    获取B站登录二维码
+    
+    返回:
+        {
+            "code": 200,
+            "qr_url": "二维码URL",
+            "qr_key": "轮询用的key"
+        }
+    """
+    try:
+        if bili_login_handler is None:
+            raise HTTPException(status_code=500, detail="B站登录处理器未初始化")
+        
+        qr_url, qr_key = bili_login_handler.getQRCode()
+        
+        # 生成base64二维码图片（可选）
+        try:
+            import qrcode
+            from io import BytesIO
+            qr = qrcode.QRCode(border=1)
+            qr.add_data(qr_url)
+            qr.make()
+            img = qr.make_image(fill_color="black", back_color="white")
+            
+            buffer = BytesIO()
+            img.save(buffer, format='PNG')
+            img_base64 = base64.b64encode(buffer.getvalue()).decode()
+            
+            return {
+                "code": 200,
+                "qr_url": qr_url,
+                "qr_key": qr_key,
+                "qr_img": f"data:image/png;base64,{img_base64}"
+            }
+        except ImportError:
+            # 如果没有qrcode库，只返回URL
+            return {
+                "code": 200,
+                "qr_url": qr_url,
+                "qr_key": qr_key
+            }
+    except Exception as e:
+        print(f"❌ 获取B站登录二维码失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/bili/login/poll")
+async def bili_poll_login(qr_key: str = Query(..., description="二维码key")):
+    """
+    轮询B站登录状态
+    
+    参数:
+        qr_key: 二维码的key
+        
+    返回:
+        {
+            "code": 86101/86090/86038/0,
+            "message": "状态描述"
+        }
+    """
+    try:
+        if bili_login_handler is None:
+            raise HTTPException(status_code=500, detail="B站登录处理器未初始化")
+        
+        result = bili_login_handler.pollQRStatus(qr_key)
+        
+        # 如果登录成功，保存cookies
+        if result['code'] == 0 and 'cookies' in result:
+            BiliCookieManager.save_cookie(result['cookies'])
+            # 不返回cookies给前端，保护隐私
+            del result['cookies']
+            print("✅ B站登录成功，Cookie已保存")
+        
+        return result
+    except Exception as e:
+        print(f"❌ 轮询B站登录状态失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/bili/login/info")
+async def bili_get_login_info():
+    """
+    获取当前B站登录信息
+    
+    返回:
+        用户信息或未登录状态
+    """
+    try:
+        cookie_dict = BiliCookieManager.load_cookie()
+        if not cookie_dict:
+            return {
+                "code": 401,
+                "logged_in": False,
+                "message": "未登录"
+            }
+        
+        if bili_login_handler is None:
+            raise HTTPException(status_code=500, detail="B站登录处理器未初始化")
+        
+        # 将字典转换为 RequestsCookieJar
+        cookies = BiliCookieManager.dict_to_cookiejar(cookie_dict)
+        user_info = bili_login_handler.getLoginInfo(cookies)
+        
+        return {
+            "code": 200,
+            **user_info
+        }
+    except Exception as e:
+        print(f"❌ 获取B站登录信息失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/bili/login")
+async def bili_logout():
+    """
+    退出B站登录（清除本地Cookie）
+    
+    返回:
+        操作结果
+    """
+    try:
+        BiliCookieManager.clear_cookie()
+        return {
+            "code": 200,
+            "message": "已退出登录"
+        }
+    except Exception as e:
+        print(f"❌ 退出B站登录失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
