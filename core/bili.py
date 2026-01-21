@@ -199,6 +199,7 @@ class BiliVideo:
         """
         try:
             # 优先使用MP4格式 (fnval=1)，便于直接重定向播放
+            # platform=html5 可以绕过防盗链验证（无需 referer 和特殊 UA）
             params = {
                 'bvid': bvid,
                 'cid': cid,
@@ -206,6 +207,8 @@ class BiliVideo:
                 'fnval': 1,  # MP4格式
                 'fnver': 0,
                 'fourk': 1,
+                'platform': 'html5',  # 绕过防盗链验证
+                'high_quality': 1,  # html5模式下启用高画质
                 'from_client': 'BROWSER'
             }
             

@@ -1048,7 +1048,12 @@ async def play_vrc_main(
     # ==========================================
     # 🎬 分支 0: B站视频播放
     # ==========================================
-    if bvid:
+    # 检查是否提供了 bvid 参数（注意：空字符串也算提供了参数）
+    if bvid is not None:
+        # 如果 bvid 是空字符串，返回错误
+        if not bvid or not bvid.strip():
+            raise HTTPException(status_code=400, detail="bvid 参数不能为空")
+        
         try:
             if bili_video_handler is None:
                 raise HTTPException(status_code=500, detail="B站视频处理器未初始化")
