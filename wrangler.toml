@@ -1,0 +1,24 @@
+# Cloudflare Workers 配置文件
+# 使用方法：wrangler publish
+
+name = "biliurl-cdn"
+main = "cloudflare-worker.js"
+compatibility_date = "2024-01-01"
+
+# Workers 配置
+workers_dev = true
+route = ""  # 生产环境时填写你的域名路由，如 "yourdomain.com/*"
+
+# 环境变量（可选）
+[env.production]
+name = "biliurl-cdn-prod"
+route = "yourdomain.com/*"
+
+[env.staging]
+name = "biliurl-cdn-staging"
+route = "staging.yourdomain.com/*"
+
+# KV 命名空间（用于存储健康检查状态，可选）
+# [[kv_namespaces]]
+# binding = "HEALTH_STATUS"
+# id = "your-kv-namespace-id"

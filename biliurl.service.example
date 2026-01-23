@@ -1,0 +1,25 @@
+[Unit]
+Description=BiliURL Media Proxy Service - CDN Node
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/biliurl
+Environment="NODE_NAME=changsha-01"
+Environment="NODE_REGION=mainland_china"
+ExecStart=/usr/bin/python3 /opt/biliurl/run_server.py
+Restart=always
+RestartSec=10
+
+# 安全限制
+NoNewPrivileges=true
+PrivateTmp=true
+
+# 日志
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=biliurl
+
+[Install]
+WantedBy=multi-user.target

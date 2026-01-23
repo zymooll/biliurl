@@ -29,9 +29,54 @@ bili_login_handler: Optional[BiliLogin] = None
 bili_video_handler: Optional[BiliVideo] = None
 API_BASE_URL = "http://localhost:3002/"
 
+# 节点配置
+import socket
+NODE_NAME = os.getenv('NODE_NAME', socket.gethostname())  # 从环境变量获取节点名称
+NODE_REGION = os.getenv('NODE_REGION', 'unknown')  # changsha/singapore/sydney
+
 # 用户绑定的ID和MV参数存储 (内存缓存)
 # 格式: {"user": {"id": 123, "mv": True}}
 user_id_bindings = {}
+
+# ==========================================
+# 健康检查端点（用于Workers和负载均衡）
+# ==========================================
+@router.get("/health")
+async def health_check():
+    """
+    健康检查端点
+    返回服务器健康状态和基本信息
+    """
+    try:
+        # 检查关键依赖
+        api_healthy = False
+        try:
+            resp = requests.get(API_BASE_URL, timeout=2)
+            api_healthy = resp.status_code < 500
+        except:
+            pass
+        
+        bili_healthy = bili_video_handler is not None
+        
+        status = "healthy" if (api_healthy and bili_healthy) else "degraded"
+        
+        return JSONResponse({
+            "status": status,
+            "node": NODE_NAME,
+            "region": NODE_REGION,
+            "timestamp": int(time.time()),
+            "services": {
+                "ncm_api": "healthy" if api_healthy else "unhealthy",
+                "bili_video": "healthy" if bili_healthy else "unhealthy"
+            },
+            "uptime": int(time.time() - startup_time) if 'startup_time' in globals() else 0
+        })
+    except Exception as e:
+        return JSONResponse({
+            "status": "unhealthy",
+            "error": str(e),
+            "timestamp": int(time.time())
+        }, status_code=503)
 
 
 # 静态文件目录路径（用于挂载）
@@ -1087,8 +1132,12 @@ async def play_vrc_main(
             
             print(f"✅ [B站视频] 重定向到视频流: {detected_bvid} (qn={qn})")
             
-            # 重定向到视频流URL
-            return RedirectResponse(url=video_url, status_code=302)
+            # 重定向到视频流URL（添加no-cache头）
+            response = RedirectResponse(url=video_url, status_code=302)
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+            return response
             
         except ValueError as e:
             # 参数错误或视频不存在
