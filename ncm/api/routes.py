@@ -457,6 +457,29 @@ async def api_info():
     """API信息接口"""
     return create_json_response({"message": "NCM API Service is running", "docs": "/docs"})
 
+@router.get("/hello")
+async def hello():
+    """自我介绍接口"""
+    return create_json_response({
+        "name": "NCM API Service",
+        "description": "你好！我是一个基于 FastAPI 构建的多媒体流媒体 API 服务。我支持 B站视频播放和网易云音乐播放，为 VRChat 等场景提供音视频资源代理。",
+        "features": [
+            "B站视频播放（支持多清晰度，最高1080P+）",
+            "网易云音乐播放（支持搜索、ID直接播放）",
+            "B站账号扫码登录管理",
+            "网易云音乐账号登录管理",
+            "歌词获取与匹配",
+            "动态线程池并发处理"
+        ],
+        "endpoints": {
+            "播放接口": "/play/vrc",
+            "B站登录": "/bili/login/*",
+            "网易云登录": "/login/qr/*",
+            "搜索": "/search",
+            "API文档": "/docs"
+        }
+    })
+
 @router.get("/favicon.ico")
 async def favicon():
     from fastapi.responses import Response
